@@ -129,17 +129,19 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 /* ==================================================== */
 
 let sb = null;
-let DATA = { trabajadores:[], indicadores:[], registros:[], adminPin:'2026', bonificaciones:[] };
+let DATA = { trabajadores:[], indicadores:[], registros:[], adminPin:'2026', bonificaciones:[], lideres:[] };
 let view = 'trabajador';
-let adminUnlocked = false;
+let currentSession = null; // {tipo:'admin', nombre:'Administrador'} | {tipo:'lider', nombre, id}
 let adminTab = 'registrar';
 let workerResult = null;
 let registrarState = { fecha:null, trabajadorCodigo:'', marcados:{}, nota:'' };
 let resumenPeriodo = null;
 let resumenDetalleCodigo = '';
-let pendingChange = null; // {kind:'trab'|'ind', action:'off'|'on', id}
+let bonoQuincena = null;
+let pendingChange = null; // {kind:'trab'|'ind'|'lider', action:'off'|'on', id}
 let mostrarInactivosTrab = false;
 let mostrarInactivosInd = false;
+let mostrarInactivosLid = false;
 
 function todayStr(){
   const d = new Date();
@@ -167,22 +169,25 @@ function tierOf(score){
 /* ---------- SUPABASE ---------- */
 async function fetchAll(){
   try{
-    const [tRes, iRes, rRes, aRes, bRes] = await Promise.all([
+    const [tRes, iRes, rRes, aRes, bRes, lRes] = await Promise.all([
       sb.from('trabajadores').select('*').order('nombre'),
       sb.from('indicadores').select('*').order('creado_en'),
       sb.from('registros').select('*'),
       sb.from('ajustes').select('*').eq('id',1).maybeSingle(),
-      sb.from('bonificaciones').select('*')
+      sb.from('bonificaciones').select('*'),
+      sb.from('lideres').select('*').order('nombre')
     ]);
     if(tRes.error) throw tRes.error;
     if(iRes.error) throw iRes.error;
     if(rRes.error) throw rRes.error;
     if(bRes.error) throw bRes.error;
+    if(lRes.error) throw lRes.error;
     DATA.trabajadores = tRes.data || [];
     DATA.indicadores = iRes.data || [];
     DATA.registros = rRes.data || [];
     DATA.adminPin = (aRes.data && aRes.data.admin_pin) || '2026';
     DATA.bonificaciones = bRes.data || [];
+    DATA.lideres = lRes.data || [];
     return true;
   }catch(e){
     showToast('No se pudo conectar con Supabase: ' + (e.message||e));
@@ -191,19 +196,29 @@ async function fetchAll(){
 }
 
 /* ---------- CÁLCULO ---------- */
+function scoresFromRegistros(registrosSubset){
+  const activos = DATA.indicadores.filter(i=>i.activo!==false);
+  const inactivosConDatos = DATA.indicadores.filter(i=>i.activo===false && registrosSubset.some(r=>r.indicador_id===i.id));
+  const cats = [...activos, ...inactivosConDatos];
+  return cats.map(ind=>{
+    const regs = registrosSubset.filter(r=>r.indicador_id===ind.id);
+    const puntos = regs.length * ind.puntos_por_falta;
+    const score = Math.max(0, 100 - puntos);
+    return {id:ind.id, nombre:ind.nombre, peso:Number(ind.peso)||0, score, veces:regs.length};
+  });
+}
 function categoriesForPeriod(periodo){
   const activos = DATA.indicadores.filter(i=>i.activo!==false);
   const inactivosConDatos = DATA.indicadores.filter(i=>i.activo===false && DATA.registros.some(r=>r.indicador_id===i.id && r.periodo===periodo));
   return [...activos, ...inactivosConDatos];
 }
 function computeCategoryScores(codigo, periodo){
-  const cats = categoriesForPeriod(periodo);
-  return cats.map(ind=>{
-    const regs = DATA.registros.filter(r=>r.trabajador_codigo===codigo && r.periodo===periodo && r.indicador_id===ind.id);
-    const puntos = regs.length * ind.puntos_por_falta;
-    const score = Math.max(0, 100 - puntos);
-    return {id:ind.id, nombre:ind.nombre, peso:Number(ind.peso)||0, score, veces:regs.length};
-  });
+  const subset = DATA.registros.filter(r=>r.trabajador_codigo===codigo && r.periodo===periodo);
+  return scoresFromRegistros(subset);
+}
+function computeCategoryScoresRange(codigo, fechaInicio, fechaFin){
+  const subset = DATA.registros.filter(r=>r.trabajador_codigo===codigo && r.fecha>=fechaInicio && r.fecha<=fechaFin);
+  return scoresFromRegistros(subset);
 }
 function computeWeighted(catScores){
   if(!catScores.length) return null;
@@ -216,12 +231,39 @@ function allPeriodos(){
   set.add(todayStr().slice(0,7));
   return Array.from(set).sort().reverse();
 }
+function quincenaRange(id){
+  const [y,m,q] = id.split('-');
+  const year = parseInt(y,10), month = parseInt(m,10);
+  if(q==='Q1') return { inicio: `${y}-${m}-01`, fin: `${y}-${m}-15` };
+  const lastDay = new Date(year, month, 0).getDate();
+  return { inicio: `${y}-${m}-16`, fin: `${y}-${m}-${String(lastDay).padStart(2,'0')}` };
+}
+function quincenaLabel(id){
+  const [y,m,q] = id.split('-');
+  const {inicio, fin} = quincenaRange(id);
+  const mesNombre = periodLabel(`${y}-${m}`).split(' ')[0];
+  return `${inicio.split('-')[2]}–${fin.split('-')[2]} ${mesNombre} ${y}`;
+}
+function currentQuincenaId(){
+  const d = new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0');
+  return `${y}-${m}-${d.getDate()<=15?'Q1':'Q2'}`;
+}
+function allQuincenas(){
+  const set = new Set();
+  DATA.registros.forEach(r=>{
+    const [y,m,d] = r.fecha.split('-');
+    set.add(`${y}-${m}-${parseInt(d,10)<=15?'Q1':'Q2'}`);
+  });
+  set.add(currentQuincenaId());
+  return Array.from(set).sort().reverse();
+}
 function historialDelPeriodo(codigo, periodo){
   return DATA.registros
     .filter(r=>r.trabajador_codigo===codigo && r.periodo===periodo)
     .map(r=>{
       const ind = DATA.indicadores.find(i=>i.id===r.indicador_id);
-      return { id:r.indicador_id, fecha:r.fecha, indicador: ind?ind.nombre:'(indicador eliminado)', puntos: ind?ind.puntos_por_falta:0, nota:r.nota };
+      return { id:r.indicador_id, fecha:r.fecha, indicador: ind?ind.nombre:'(indicador eliminado)', puntos: ind?ind.puntos_por_falta:0, nota:r.nota, registradoPor:r.registrado_por };
     })
     .sort((a,b)=> b.fecha.localeCompare(a.fecha));
 }
@@ -308,19 +350,54 @@ function renderPinGate(){
 }
 
 function renderAdmin(){
-  const tabs = [
+  const esAdmin = currentSession && currentSession.tipo==='admin';
+  const tabsCompletas = [
     {k:'registrar', l:'Registrar'}, {k:'trabajadores', l:'Trabajadores'},
-    {k:'indicadores', l:'Indicadores'}, {k:'resumen', l:'Resumen'}, {k:'bonificacion', l:'Bonificación'}, {k:'qr', l:'Código QR'},
+    {k:'indicadores', l:'Indicadores'}, {k:'resumen', l:'Resumen'}, {k:'bonificacion', l:'Bonificación'},
+    {k:'lideres', l:'Líderes'}, {k:'qr', l:'Código QR'},
   ];
+  const tabs = esAdmin ? tabsCompletas : [{k:'registrar', l:'Registrar'}];
   const tabsHtml = tabs.map(t=>`<div class="tab ${adminTab===t.k?'active':''}" data-tab="${t.k}">${t.l}</div>`).join('');
+  const quienEres = `<div class="small-note" style="margin-bottom:14px;">Ingresaste como <strong>${currentSession.nombre}</strong>${esAdmin?'':' (acceso de líder)'}.</div>`;
   let body = '';
+  if(!esAdmin){ adminTab = 'registrar'; }
   if(adminTab==='registrar') body = renderRegistrar();
   else if(adminTab==='trabajadores') body = renderTrabajadoresAdmin();
   else if(adminTab==='indicadores') body = renderIndicadoresAdmin();
   else if(adminTab==='resumen') body = renderResumen();
   else if(adminTab==='bonificacion') body = renderBonificacion();
+  else if(adminTab==='lideres') body = renderLideresAdmin();
   else if(adminTab==='qr') body = renderQR();
-  return `<div class="admin-wrap"><div class="tabs">${tabsHtml}</div>${body}</div>`;
+  return `<div class="admin-wrap">${quienEres}<div class="tabs">${tabsHtml}</div>${body}</div>`;
+}
+
+function renderLideresAdmin(){
+  const activos = DATA.lideres.filter(l=>l.activo!==false);
+  const inactivos = DATA.lideres.filter(l=>l.activo===false);
+  const filasActivos = activos.map(l=>`
+    <tr><td>${l.nombre}</td><td class="mono">${l.pin}</td>
+      <td><button class="del-btn" data-off-lid="${l.id}">${pendingChange && pendingChange.kind==='lider' && pendingChange.action==='off' && pendingChange.id===l.id ? '¿Confirmar?' : 'Desactivar'}</button></td>
+    </tr>`).join('');
+  const filasInactivos = inactivos.map(l=>`
+    <tr><td>${l.nombre}</td><td class="mono">${l.pin}</td>
+      <td><button class="react-btn" data-on-lid="${l.id}">Reactivar</button></td>
+    </tr>`).join('');
+  return `
+  <div class="section-title">Líderes</div>
+  <div class="card">
+    <div class="row-flex" style="margin-bottom:14px;">
+      <input type="text" id="inpNuevoLidNombre" placeholder="Nombre del líder" style="flex:2;">
+      <input type="text" id="inpNuevoLidPin" placeholder="PIN propio" style="flex:1;">
+    </div>
+    <button class="secondary" id="btnAgregarLid">+ Agregar líder</button>
+    <table style="margin-top:16px;">
+      <thead><tr><th>Nombre</th><th>PIN</th><th></th></tr></thead>
+      <tbody>${filasActivos || '<tr><td colspan="3" class="small-note">Sin líderes activos.</td></tr>'}</tbody>
+    </table>
+    <button class="toggle-link" id="btnToggleInactivosLid">${mostrarInactivosLid?'Ocultar':'Mostrar'} inactivos (${inactivos.length})</button>
+    ${mostrarInactivosLid ? `<table style="margin-top:10px;"><tbody>${filasInactivos || '<tr><td class="small-note">Ninguno.</td></tr>'}</tbody></table>` : ''}
+    <div class="small-note">Cada líder entra con su propio PIN (distinto al PIN de administrador) y solo ve la pestaña Registrar. Cada inspección que guarde queda marcada con su nombre.</div>
+  </div>`;
 }
 
 function renderRegistrar(){
@@ -354,6 +431,7 @@ function renderTrabajadoresAdmin(){
   const filasActivos = activos.map(t=>`
     <tr><td class="mono">${t.codigo}</td><td>${t.nombre}</td>
       <td><input type="text" class="mono num-small" style="width:90px;" data-clave="${t.codigo}" value="${t.clave||''}"></td>
+      <td><input type="number" class="mono num-small" style="width:100px;" data-monto="${t.codigo}" value="${t.monto_base||0}" step="1000"></td>
       <td><button class="del-btn" data-off-trab="${t.codigo}">${pendingChange && pendingChange.kind==='trab' && pendingChange.action==='off' && pendingChange.id===t.codigo ? '¿Confirmar?' : 'Desactivar'}</button></td>
     </tr>`).join('');
   const filasInactivos = inactivos.map(t=>`
@@ -367,14 +445,16 @@ function renderTrabajadoresAdmin(){
       <input type="text" id="inpNuevoCodigo" placeholder="Código" style="flex:1;">
       <input type="text" id="inpNuevoNombre" placeholder="Nombre completo" style="flex:2;">
       <input type="text" id="inpNuevoClave" placeholder="Clave" style="flex:1;">
+      <input type="number" id="inpNuevoMonto" placeholder="Monto base bono" style="flex:1;">
     </div>
     <button class="secondary" id="btnAgregarTrab">+ Agregar trabajador</button>
     <table style="margin-top:16px;">
-      <thead><tr><th>Código</th><th>Nombre</th><th>Clave</th><th></th></tr></thead>
-      <tbody>${filasActivos || '<tr><td colspan="4" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+      <thead><tr><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto base bono</th><th></th></tr></thead>
+      <tbody>${filasActivos || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
     </table>
     <button class="toggle-link" id="btnToggleInactivosTrab">${mostrarInactivosTrab?'Ocultar':'Mostrar'} inactivos (${inactivos.length})</button>
     ${mostrarInactivosTrab ? `<table style="margin-top:10px;"><tbody>${filasInactivos || '<tr><td class="small-note">Ninguno.</td></tr>'}</tbody></table>` : ''}
+    <div class="small-note">El "monto base bono" es el 100% de bonificación de esa persona (cada quien puede tener un monto distinto) — se paga proporcional a su % de cumplimiento en la pestaña Bonificación.</div>
   </div>`;
 }
 
@@ -457,6 +537,7 @@ function renderResumen(){
   const detalleSel = resumenDetalleCodigo || (trabActivos[0] ? trabActivos[0].codigo : '');
   const detalleTrab = trabActivos.find(t=>t.codigo===detalleSel);
   const detalleCats = detalleTrab ? computeCategoryScores(detalleTrab.codigo, resumenPeriodo) : [];
+  const detalleHistorial = detalleTrab ? historialDelPeriodo(detalleTrab.codigo, resumenPeriodo) : [];
   const opcionesDetalle = trabActivos.map(t=>`<option value="${t.codigo}" ${t.codigo===detalleSel?'selected':''}>${t.nombre}</option>`).join('');
 
   return `
@@ -490,9 +571,11 @@ function renderResumen(){
     <div style="margin-top:14px;">
       ${detalleCats.map(c=>{
         const t = tierOf(c.score);
+        const items = detalleHistorial.filter(h=>h.id===c.id);
         return `<div class="mini-row">
           <div class="mini-head"><span class="nombre">${c.nombre}${c.veces?` (${c.veces}×)`:''}</span><span class="pct">${c.score}%</span></div>
           <div class="mini-track"><div class="mini-fill" style="width:${c.score}%;background:${t.color};"></div></div>
+          ${items.map(h=>`<div class="small-note" style="margin-top:4px;">${h.fecha} — ${h.nota||'sin observación'} <span style="color:var(--ink-soft);">(registró: ${h.registradoPor||'—'})</span></div>`).join('')}
         </div>`;
       }).join('') || '<div class="small-note">Sin trabajadores o indicadores aún.</div>'}
     </div>
@@ -503,35 +586,31 @@ function formatCOP(v){
   return new Intl.NumberFormat('es-CO', {style:'currency', currency:'COP', maximumFractionDigits:0}).format(v||0);
 }
 function renderBonificacion(){
-  const periodos = allPeriodos();
-  if(!resumenPeriodo) resumenPeriodo = periodos[0];
-  const opcionesPeriodo = periodos.map(p=>`<option value="${p}" ${p===resumenPeriodo?'selected':''}>${periodLabel(p)}</option>`).join('');
-  const bono = DATA.bonificaciones.find(b=>b.periodo===resumenPeriodo);
-  const montoBase = bono ? Number(bono.monto_base) : 0;
+  const quincenas = allQuincenas();
+  if(!bonoQuincena) bonoQuincena = quincenas[0];
+  const opcionesPeriodo = quincenas.map(q=>`<option value="${q}" ${q===bonoQuincena?'selected':''}>${quincenaLabel(q)}</option>`).join('');
+  const {inicio, fin} = quincenaRange(bonoQuincena);
   const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
   const filas = trabActivos.map(t=>{
-    const overall = computeWeighted(computeCategoryScores(t.codigo, resumenPeriodo));
+    const overall = computeWeighted(computeCategoryScoresRange(t.codigo, inicio, fin));
     const pct = overall===null ? 0 : overall;
+    const montoBase = Number(t.monto_base)||0;
     const valor = montoBase * (pct/100);
-    return {codigo:t.codigo, nombre:t.nombre, pct, valor};
+    return {codigo:t.codigo, nombre:t.nombre, pct, montoBase, valor};
   }).sort((a,b)=> b.pct-a.pct);
   const totalBono = filas.reduce((a,f)=>a+f.valor,0);
 
   return `
   <div class="section-title">Bonificación</div>
   <div class="card">
-    <div class="field-group"><label>Periodo</label><select id="selPeriodoBono">${opcionesPeriodo}</select></div>
-    <div class="field-group">
-      <label>Monto base de bonificación (100% de cumplimiento = este valor completo)</label>
-      <input type="number" id="inpMontoBase" value="${montoBase}" step="1000">
-    </div>
+    <div class="field-group"><label>Quincena</label><select id="selPeriodoBono">${opcionesPeriodo}</select></div>
     <table>
-      <thead><tr><th>Código</th><th>Nombre</th><th>%</th><th>Bonificación</th></tr></thead>
-      <tbody>${filas.map(f=>`<tr><td class="mono">${f.codigo}</td><td>${f.nombre}</td><td class="mono">${f.pct}%</td><td class="mono">${formatCOP(f.valor)}</td></tr>`).join('') || '<tr><td colspan="4" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
-      ${filas.length ? `<tfoot><tr><td colspan="3" style="font-weight:600;">Total a pagar</td><td class="mono" style="font-weight:600;">${formatCOP(totalBono)}</td></tr></tfoot>` : ''}
+      <thead><tr><th>Código</th><th>Nombre</th><th>%</th><th>Monto base</th><th>Bonificación</th></tr></thead>
+      <tbody>${filas.map(f=>`<tr><td class="mono">${f.codigo}</td><td>${f.nombre}</td><td class="mono">${f.pct}%</td><td class="mono">${formatCOP(f.montoBase)}</td><td class="mono">${formatCOP(f.valor)}</td></tr>`).join('') || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+      ${filas.length ? `<tfoot><tr><td colspan="4" style="font-weight:600;">Total a pagar</td><td class="mono" style="font-weight:600;">${formatCOP(totalBono)}</td></tr></tfoot>` : ''}
     </table>
     <button class="secondary" style="margin-top:14px;" id="btnGenerarPdfBono">Generar PDF / Imprimir</button>
-    <div class="small-note">El monto se guarda por periodo. El valor de cada quien es proporcional a su % de cumplimiento ponderado de ese mes.</div>
+    <div class="small-note">El monto base de cada quien se edita en la pestaña Trabajadores. El valor pagado es proporcional a su % de cumplimiento ponderado de esta quincena.</div>
   </div>`;
 }
 
@@ -547,8 +626,8 @@ function renderQR(){
 /* ---------- HANDLERS ---------- */
 function attachHandlers(){
   document.getElementById('btnToggleAdmin').onclick = ()=>{
-    if(view==='trabajador'){ view = adminUnlocked ? 'admin' : 'pinGate'; }
-    else { view = 'trabajador'; workerResult = null; }
+    if(view==='trabajador'){ view = currentSession ? 'admin' : 'pinGate'; }
+    else { view = 'trabajador'; workerResult = null; currentSession = null; }
     render();
   };
 
@@ -581,8 +660,19 @@ function attachHandlers(){
     const btn = document.getElementById('btnEntrarPin');
     const inp = document.getElementById('inpPin');
     const doEnter = ()=>{
-      if(inp.value === DATA.adminPin){ adminUnlocked = true; view='admin'; adminTab='registrar'; render(); }
-      else { document.getElementById('errPin').style.display='block'; }
+      const pin = inp.value.trim();
+      if(pin === DATA.adminPin){
+        currentSession = {tipo:'admin', nombre:'Administrador'};
+        view='admin'; adminTab='registrar'; render();
+        return;
+      }
+      const lider = DATA.lideres.find(l=>l.activo!==false && l.pin===pin);
+      if(lider){
+        currentSession = {tipo:'lider', nombre:lider.nombre, id:lider.id};
+        view='admin'; adminTab='registrar'; render();
+        return;
+      }
+      document.getElementById('errPin').style.display='block';
     };
     btn.onclick = doEnter;
     inp.addEventListener('keydown', e=>{ if(e.key==='Enter') doEnter(); });
@@ -604,7 +694,7 @@ function attachHandlers(){
         if(!registrarState.trabajadorCodigo){ showToast('Selecciona un trabajador.'); return; }
         const ids = Object.keys(registrarState.marcados).filter(k=>registrarState.marcados[k]);
         if(ids.length===0){ showToast('Marca al menos un indicador.'); return; }
-        const filas = ids.map(id=>({fecha: registrarState.fecha, trabajador_codigo: registrarState.trabajadorCodigo, indicador_id: id, nota: registrarState.nota}));
+        const filas = ids.map(id=>({fecha: registrarState.fecha, trabajador_codigo: registrarState.trabajadorCodigo, indicador_id: id, nota: registrarState.nota, registrado_por: currentSession.nombre}));
         const {error} = await sb.from('registros').insert(filas);
         if(error){ showToast('No se pudo guardar: '+error.message); return; }
         showToast('Inspección guardada.');
@@ -618,9 +708,10 @@ function attachHandlers(){
         const codigo = document.getElementById('inpNuevoCodigo').value.trim();
         const nombre = document.getElementById('inpNuevoNombre').value.trim();
         const clave = document.getElementById('inpNuevoClave').value.trim();
+        const monto = parseFloat(document.getElementById('inpNuevoMonto').value) || 0;
         if(!codigo || !nombre){ showToast('Completa código y nombre.'); return; }
         if(!clave){ showToast('Ponle una clave para que solo él/ella pueda ver su score.'); return; }
-        const {error} = await sb.from('trabajadores').insert({codigo, nombre, clave});
+        const {error} = await sb.from('trabajadores').insert({codigo, nombre, clave, monto_base: monto});
         if(error){ showToast('No se pudo agregar: '+error.message); return; }
         showToast('Trabajador agregado.');
         await fetchAll(); render();
@@ -630,6 +721,14 @@ function attachHandlers(){
           const {error} = await sb.from('trabajadores').update({clave: inp.value.trim()}).eq('codigo', inp.dataset.clave);
           if(error){ showToast('Error: '+error.message); return; }
           showToast('Clave actualizada.');
+          await fetchAll();
+        };
+      });
+      document.querySelectorAll('[data-monto]').forEach(inp=>{
+        inp.onchange = async ()=>{
+          const {error} = await sb.from('trabajadores').update({monto_base: parseFloat(inp.value)||0}).eq('codigo', inp.dataset.monto);
+          if(error){ showToast('Error: '+error.message); return; }
+          showToast('Monto base actualizado.');
           await fetchAll();
         };
       });
@@ -742,21 +841,14 @@ function attachHandlers(){
     }
 
     if(adminTab==='bonificacion'){
-      document.getElementById('selPeriodoBono').onchange = (e)=>{ resumenPeriodo = e.target.value; render(); };
-      document.getElementById('inpMontoBase').onchange = async (e)=>{
-        const monto = parseFloat(e.target.value) || 0;
-        const {error} = await sb.from('bonificaciones').upsert({periodo: resumenPeriodo, monto_base: monto}, {onConflict:'periodo'});
-        if(error){ showToast('Error: '+error.message); return; }
-        showToast('Monto guardado.');
-        await fetchAll(); render();
-      };
+      document.getElementById('selPeriodoBono').onchange = (e)=>{ bonoQuincena = e.target.value; render(); };
       document.getElementById('btnGenerarPdfBono').onclick = ()=>{
-        const bono = DATA.bonificaciones.find(b=>b.periodo===resumenPeriodo);
-        const montoBase = bono ? Number(bono.monto_base) : 0;
+        const {inicio, fin} = quincenaRange(bonoQuincena);
         const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
         const filas = trabActivos.map(t=>{
-          const overall = computeWeighted(computeCategoryScores(t.codigo, resumenPeriodo));
+          const overall = computeWeighted(computeCategoryScoresRange(t.codigo, inicio, fin));
           const pct = overall===null ? 0 : overall;
+          const montoBase = Number(t.monto_base)||0;
           return {codigo:t.codigo, nombre:t.nombre, pct, valor: montoBase*(pct/100)};
         }).sort((a,b)=> b.pct-a.pct);
         const total = filas.reduce((a,f)=>a+f.valor,0);
@@ -766,7 +858,7 @@ function attachHandlers(){
             <div class="print-header">
               <div><div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#5B6668;">Gerco · Planta</div>
                    <div style="font-size:18px;font-weight:700;">Bonificación de desempeño</div></div>
-              <div style="text-align:right;font-size:13px;">${periodLabel(resumenPeriodo)}<br>Monto base: ${formatCOP(montoBase)}</div>
+              <div style="text-align:right;font-size:13px;">${quincenaLabel(bonoQuincena)}</div>
             </div>
             <table class="print-table">
               <thead><tr><th>Código</th><th>Nombre</th><th>% Cumplimiento</th><th>Bonificación</th></tr></thead>
@@ -776,6 +868,40 @@ function attachHandlers(){
           </div>`;
         window.print();
       };
+    }
+
+    if(adminTab==='lideres'){
+      document.getElementById('btnAgregarLid').onclick = async ()=>{
+        const nombre = document.getElementById('inpNuevoLidNombre').value.trim();
+        const pin = document.getElementById('inpNuevoLidPin').value.trim();
+        if(!nombre || !pin){ showToast('Completa nombre y PIN.'); return; }
+        if(pin === DATA.adminPin){ showToast('Ese PIN ya lo usa el administrador, elige otro.'); return; }
+        const {error} = await sb.from('lideres').insert({id: uid(), nombre, pin});
+        if(error){ showToast('No se pudo agregar: '+error.message); return; }
+        showToast('Líder agregado.');
+        await fetchAll(); render();
+      };
+      document.querySelectorAll('[data-off-lid]').forEach(b=>{
+        b.onclick = async ()=>{
+          const id = b.dataset.offLid;
+          if(pendingChange && pendingChange.kind==='lider' && pendingChange.action==='off' && pendingChange.id===id){
+            const {error} = await sb.from('lideres').update({activo:false}).eq('id', id);
+            pendingChange = null;
+            if(error){ showToast('Error: '+error.message); return; }
+            showToast('Líder desactivado.');
+            await fetchAll(); render();
+          } else { pendingChange = {kind:'lider', action:'off', id}; render(); }
+        };
+      });
+      document.querySelectorAll('[data-on-lid]').forEach(b=>{
+        b.onclick = async ()=>{
+          const {error} = await sb.from('lideres').update({activo:true}).eq('id', b.dataset.onLid);
+          if(error){ showToast('Error: '+error.message); return; }
+          await fetchAll(); render();
+        };
+      });
+      const toggleBtn = document.getElementById('btnToggleInactivosLid');
+      if(toggleBtn) toggleBtn.onclick = ()=>{ mostrarInactivosLid = !mostrarInactivosLid; render(); };
     }
 
     if(adminTab==='qr'){
