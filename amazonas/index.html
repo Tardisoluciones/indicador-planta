@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Indicador de Planta</title>
+<script src="config.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --verde:#2F8F5B; --amarillo:#D6A419; --naranja:#C97324; --rojo:#C0392B;
+    --steel:#0C2478; --steel-dark:#081A57; --brand-blue:#00A8F0; --ink:#1E2426; --ink-soft:#5B6668;
+    --paper:#F5F7F7; --card:#FFFFFF; --line:#DCE1E2;
+    --tint:#EEF2F3; --input-bg:#FBFCFC; --track:#E7EAEA; --card-shadow:none; --accent-bar:transparent;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--paper);color:var(--ink);font-family:'Space Grotesk',sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  .topbar{position:relative;display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--card);}
+  .topbar::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:3px;background:var(--accent-bar);pointer-events:none;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-logo{height:var(--logo-h,30px);width:auto;display:block;}
+  @media (max-width:400px){ .brand-logo{height:var(--logo-h-movil,var(--logo-h,30px));} }
+  .brand .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-blue);white-space:nowrap;}
+  .brand .title{font-weight:700;font-size:16px;line-height:1.1;}
+  .linklike{background:none;border:none;color:var(--steel);font-family:inherit;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:6px;}
+  .linklike:hover{background:var(--tint);}
+  .wrap{max-width:480px;margin:0 auto;padding:24px 18px 60px;}
+  .admin-wrap{max-width:680px;margin:0 auto;padding:20px 16px 60px;}
+  .month-label{text-align:center;color:var(--ink-soft);font-size:13px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+  h1.headline{text-align:center;font-size:22px;margin:0 0 22px;font-weight:700;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:var(--card-shadow);}
+  .field-group{margin-bottom:14px;}
+  label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px;font-weight:500;}
+  input[type=text],input[type=number],input[type=password]{
+    width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:9px;
+    font-family:'IBM Plex Mono',monospace;font-size:16px;background:var(--input-bg);color:var(--ink);
+  }
+  input:focus{outline:2px solid var(--steel);outline-offset:1px;}
+  button.primary{width:100%;padding:13px;border:none;border-radius:9px;background:var(--steel);color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;cursor:pointer;}
+  button.primary:hover{background:var(--steel-dark);}
+  button.secondary{padding:10px 14px;border:1px solid var(--line);border-radius:9px;background:#fff;font-family:inherit;font-weight:500;font-size:13px;cursor:pointer;color:var(--ink);}
+  button.secondary:hover{border-color:var(--steel);}
+  .err{color:var(--rojo);font-size:13px;margin-top:8px;display:none;}
+  .worker-name{text-align:center;font-size:16px;font-weight:600;}
+  .bar-track{width:100%;height:22px;background:var(--track);border-radius:11px;overflow:hidden;margin-top:16px;}
+  .bar-fill{height:100%;border-radius:11px;transition:width 1s ease;}
+  .bar-readout{display:flex;justify-content:space-between;align-items:center;margin-top:14px;}
+  .bar-score{font-family:'IBM Plex Mono',monospace;font-size:32px;font-weight:600;}
+  .tier-label{padding:6px 14px;border-radius:20px;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;}
+  .mini-row{margin-bottom:12px;}
+  .mini-head{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;}
+  .mini-head .nombre{color:var(--ink-soft);}
+  .mini-head .pct{font-family:'IBM Plex Mono',monospace;font-weight:600;}
+  .mini-track{width:100%;height:8px;background:var(--track);border-radius:5px;overflow:hidden;}
+  .mini-fill{height:100%;border-radius:5px;}
+  .back-link{display:block;text-align:center;margin-top:16px;}
+  .hist-title{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:22px 0 10px;font-weight:600;border-top:1px solid var(--line);padding-top:16px;}
+  .hist-item{padding:10px 0;border-bottom:1px solid #EEF0F0;}
+  .hist-item:last-child{border-bottom:none;}
+  .hist-top{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;gap:10px;}
+  .hist-ind{font-weight:600;}
+  .hist-meta{font-family:'IBM Plex Mono',monospace;color:var(--rojo);font-size:12px;white-space:nowrap;}
+  .hist-date{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);font-size:12px;white-space:nowrap;}
+  .hist-nota{font-size:12px;color:var(--ink-soft);margin-top:3px;}
+  .hist-empty{text-align:center;color:var(--ink-soft);font-size:13px;padding:14px 0;}
+  .cat-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:12px;box-shadow:var(--card-shadow);}
+  .cat-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;}
+  .cat-name{font-weight:600;font-size:14px;}
+  .cat-pct{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:14px;}
+  .cat-card .mini-track{height:9px;margin-bottom:10px;}
+  .cat-card .hist-item{padding:8px 0;}
+  .pin-screen{max-width:320px;margin:80px auto 0;text-align:center;}
+  .tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:18px;padding-bottom:2px;}
+  .tab{padding:9px 14px;border-radius:8px;background:#fff;border:1px solid var(--line);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;color:var(--ink-soft);}
+  .tab.active{background:var(--steel);color:#fff;border-color:var(--steel);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);font-weight:600;}
+  .row-flex{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .chip-check{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;cursor:pointer;background:#fff;}
+  .chip-check.checked{border-color:var(--steel);background:var(--tint);}
+  .chip-check input{width:auto;}
+  .chip-check .pts{margin-left:auto;font-family:'IBM Plex Mono',monospace;color:var(--rojo);font-size:12px;}
+  .section-title{font-weight:700;font-size:15px;margin:22px 0 10px;}
+  .section-title:first-child{margin-top:0;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:50;max-width:88vw;text-align:center;}
+  .toast.show{opacity:1;}
+  .small-note{font-size:12px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
+  .qr-box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px;text-align:center;}
+  #qrcode{display:inline-block;margin:10px auto;}
+  .del-btn{background:none;border:none;color:var(--rojo);cursor:pointer;font-size:12px;font-family:inherit;}
+  .react-btn{background:none;border:none;color:var(--steel);cursor:pointer;font-size:12px;font-family:inherit;}
+  select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-family:'Space Grotesk',sans-serif;font-size:14px;background:var(--input-bg);color:var(--ink);}
+  .loading{text-align:center;padding:60px 20px;color:var(--ink-soft);font-size:13px;}
+  .toggle-link{font-size:12px;color:var(--steel);cursor:pointer;background:none;border:none;font-family:inherit;padding:0;margin-top:10px;display:inline-block;}
+  .num-small{width:70px;padding:6px;}
+  #printArea{position:fixed;left:-9999px;top:0;}
+  .print-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;border-bottom:2px solid var(--ink);padding-bottom:10px;}
+  .print-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .print-table th,.print-table td{border:1px solid #999;padding:6px 8px;text-align:left;}
+  @media print{
+    body > *:not(#printArea){display:none !important;}
+    #printArea{position:static;left:0;display:block;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <img src="" alt="" class="brand-logo" id="brandLogo">
+    <div>
+      <span class="eyebrow" id="brandEyebrow"></span><br>
+      <span class="title">Indicador de desempeño</span>
+    </div>
+  </div>
+  <button class="linklike" id="btnToggleAdmin">Panel administrador</button>
+</div>
+
+<div id="app"><div class="loading">Cargando…</div></div>
+<div id="printArea"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======= LA CONFIGURACIÓN DE CADA EMPRESA ESTÁ EN config.js ======= */
+/* Este archivo es idéntico para todas las empresas: no editar aquí.  */
+if(typeof EMPRESA==='undefined'){ window.EMPRESA = null; }
+const SUPABASE_URL = (window.EMPRESA && EMPRESA.supabaseUrl) || 'PEGA_AQUI';
+const SUPABASE_ANON_KEY = (window.EMPRESA && EMPRESA.supabaseAnonKey) || 'PEGA_AQUI';
+/* ==================================================================== */
+function aplicarMarca(){
+  const e = window.EMPRESA; if(!e) return;
+  document.title = e.tituloPestana || ('Indicador de Planta — ' + e.nombre);
+  const logo = document.getElementById('brandLogo');
+  logo.src = e.logo; logo.alt = e.nombre;
+  const root = document.documentElement.style;
+  if(e.logoAlto) root.setProperty('--logo-h', e.logoAlto + 'px');
+  if(e.logoAltoMovil) root.setProperty('--logo-h-movil', e.logoAltoMovil + 'px');
+  document.getElementById('brandEyebrow').textContent = e.etiqueta;
+  Object.entries(e.tema || {}).forEach(([k,v])=> root.setProperty('--'+k, v));
+}
+
+let sb = null;
+let DATA = { trabajadores:[], indicadores:[], registros:[], adminPin:null, bonificaciones:[], lideres:[] };
+let view = 'trabajador';
+let currentSession = null; // {tipo:'admin', nombre:'Administrador'} | {tipo:'lider', nombre, id}
+let SESION_PIN = null;     // PIN con el que se abrió el panel (se valida en el servidor en cada operación)
+let adminTab = 'registrar';
+let workerResult = null;
+let registrarState = { fecha:null, trabajadorCodigo:'', marcados:{}, nota:'' };
+let resumenPeriodo = null;
+let resumenDetalleCodigo = '';
+let bonoQuincena = null;
+let pendingChange = null; // {kind:'trab'|'ind'|'lider', action:'off'|'on', id}
+let mostrarInactivosTrab = false;
+let mostrarInactivosInd = false;
+let mostrarInactivosLid = false;
+
+function todayStr(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function periodLabel(periodo){
+  const [y,m] = periodo.split('-');
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  return meses[parseInt(m,10)-1] + ' ' + y;
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function tierOf(score){
+  if(score===null) return {label:'Sin datos', color:'#8A9496', bg:'#EEF0F0'};
+  if(score>=90) return {label:'Sobresaliente', color:'#2F8F5B', bg:'#E7F3EC'};
+  if(score>=70) return {label:'En regla', color:'#D6A419', bg:'#FBF0D9'};
+  if(score>=50) return {label:'Atención', color:'#C97324', bg:'#F7E5D5'};
+  return {label:'Crítico', color:'#C0392B', bg:'#F6DEDB'};
+}
+
+/* ---------- SUPABASE ---------- */
+/* Acceso seguro: la página NO lee tablas directamente. Todo pasa por funciones
+   de Supabase que validan empresa + PIN (panel) o código + clave (trabajador). */
+function empresaId(){ return window.EMPRESA.id; }
+function limpiarDatos(){
+  DATA.trabajadores = []; DATA.indicadores = []; DATA.registros = [];
+  DATA.bonificaciones = []; DATA.lideres = []; DATA.adminPin = null;
+}
+function cargarDatos(d){
+  DATA.trabajadores = d.trabajadores || [];
+  DATA.indicadores = d.indicadores || [];
+  DATA.registros = d.registros || [];
+  DATA.bonificaciones = d.bonificaciones || [];
+  DATA.lideres = d.lideres || [];
+  DATA.adminPin = d.admin_pin || null;
+}
+// Abre el panel con un PIN. Devuelve true si el PIN es válido para esta empresa.
+async function abrirPanel(pin){
+  const {data, error} = await sb.rpc('indicador_datos', {p_empresa: empresaId(), p_pin: pin});
+  if(error){ showToast(error.message); return false; }
+  if(!data) return false;
+  SESION_PIN = pin; currentSession = data.sesion; cargarDatos(data);
+  return true;
+}
+// Recarga los datos del panel con la sesión vigente
+async function fetchAll(){
+  if(!SESION_PIN) return false;
+  const {data, error} = await sb.rpc('indicador_datos', {p_empresa: empresaId(), p_pin: SESION_PIN});
+  if(error || !data){ showToast('No se pudo actualizar: ' + (error ? error.message : 'sesión no válida')); return false; }
+  currentSession = data.sesion; cargarDatos(data);
+  return true;
+}
+// Consulta del trabajador: solo recibe SUS registros
+async function consultarTrabajador(codigo, clave){
+  const {data, error} = await sb.rpc('indicador_trabajador', {p_empresa: empresaId(), p_codigo: codigo, p_clave: clave});
+  if(error){ showToast(error.message); return false; }
+  if(!data) return false;
+  DATA.trabajadores = [data.trabajador];
+  DATA.indicadores = data.indicadores || [];
+  DATA.registros = data.registros || [];
+  return true;
+}
+// Escrituras: misma forma que antes (db.from(tabla).insert / .update().eq()),
+// pero se ejecutan en el servidor, que valida el PIN y la empresa.
+async function mutar(tabla, op, valores, filtro){
+  const {data, error} = await sb.rpc('indicador_mutar', {
+    p_empresa: empresaId(), p_pin: SESION_PIN, p_tabla: tabla, p_op: op, p_valores: valores, p_filtro: filtro
+  });
+  return {data, error};
+}
+const db = {
+  from(tabla){
+    return {
+      insert(valores){ return mutar(tabla, 'insert', valores, null); },
+      update(valores){ return { eq(campo, valor){ return mutar(tabla, 'update', valores, {[campo]: valor}); } }; }
+    };
+  }
+};
+
+/* ---------- CÁLCULO ---------- */
+function scoresFromRegistros(registrosSubset){
+  const activos = DATA.indicadores.filter(i=>i.activo!==false);
+  const inactivosConDatos = DATA.indicadores.filter(i=>i.activo===false && registrosSubset.some(r=>r.indicador_id===i.id));
+  const cats = [...activos, ...inactivosConDatos];
+  return cats.map(ind=>{
+    const regs = registrosSubset.filter(r=>r.indicador_id===ind.id);
+    const puntos = regs.length * ind.puntos_por_falta;
+    const score = Math.max(0, 100 - puntos);
+    return {id:ind.id, nombre:ind.nombre, peso:Number(ind.peso)||0, score, veces:regs.length};
+  });
+}
+function categoriesForPeriod(periodo){
+  const activos = DATA.indicadores.filter(i=>i.activo!==false);
+  const inactivosConDatos = DATA.indicadores.filter(i=>i.activo===false && DATA.registros.some(r=>r.indicador_id===i.id && r.periodo===periodo));
+  return [...activos, ...inactivosConDatos];
+}
+function computeCategoryScores(codigo, periodo){
+  const subset = DATA.registros.filter(r=>r.trabajador_codigo===codigo && r.periodo===periodo);
+  return scoresFromRegistros(subset);
+}
+function computeCategoryScoresRange(codigo, fechaInicio, fechaFin){
+  const subset = DATA.registros.filter(r=>r.trabajador_codigo===codigo && r.fecha>=fechaInicio && r.fecha<=fechaFin);
+  return scoresFromRegistros(subset);
+}
+function computeWeighted(catScores){
+  if(!catScores.length) return null;
+  const sumPeso = catScores.reduce((a,c)=>a+c.peso,0);
+  if(sumPeso<=0) return Math.round((catScores.reduce((a,c)=>a+c.score,0)/catScores.length)*10)/10;
+  return Math.round((catScores.reduce((a,c)=>a+c.score*c.peso,0)/sumPeso)*10)/10;
+}
+function allPeriodos(){
+  const set = new Set(DATA.registros.map(r=>r.periodo));
+  set.add(todayStr().slice(0,7));
+  return Array.from(set).sort().reverse();
+}
+function quincenaRange(id){
+  const [y,m,q] = id.split('-');
+  const year = parseInt(y,10), month = parseInt(m,10);
+  if(q==='Q1') return { inicio: `${y}-${m}-01`, fin: `${y}-${m}-15` };
+  const lastDay = new Date(year, month, 0).getDate();
+  return { inicio: `${y}-${m}-16`, fin: `${y}-${m}-${String(lastDay).padStart(2,'0')}` };
+}
+function quincenaLabel(id){
+  const [y,m,q] = id.split('-');
+  const {inicio, fin} = quincenaRange(id);
+  const mesNombre = periodLabel(`${y}-${m}`).split(' ')[0];
+  return `${inicio.split('-')[2]}–${fin.split('-')[2]} ${mesNombre} ${y}`;
+}
+function currentQuincenaId(){
+  const d = new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0');
+  return `${y}-${m}-${d.getDate()<=15?'Q1':'Q2'}`;
+}
+function allQuincenas(){
+  const set = new Set();
+  DATA.registros.forEach(r=>{
+    const [y,m,d] = r.fecha.split('-');
+    set.add(`${y}-${m}-${parseInt(d,10)<=15?'Q1':'Q2'}`);
+  });
+  set.add(currentQuincenaId());
+  return Array.from(set).sort().reverse();
+}
+function historialDelPeriodo(codigo, periodo){
+  return DATA.registros
+    .filter(r=>r.trabajador_codigo===codigo && r.periodo===periodo)
+    .map(r=>{
+      const ind = DATA.indicadores.find(i=>i.id===r.indicador_id);
+      return { id:r.indicador_id, fecha:r.fecha, indicador: ind?ind.nombre:'(indicador eliminado)', puntos: ind?ind.puntos_por_falta:0, nota:r.nota, registradoPor:r.registrado_por };
+    })
+    .sort((a,b)=> b.fecha.localeCompare(a.fecha));
+}
+
+/* ---------- RENDER ---------- */
+function render(){
+  const app = document.getElementById('app');
+  if(view==='trabajador') app.innerHTML = renderTrabajador();
+  else if(view==='pinGate') app.innerHTML = renderPinGate();
+  else app.innerHTML = renderAdmin();
+  document.getElementById('btnToggleAdmin').textContent = (view==='trabajador') ? 'Panel administrador' : 'Ver como trabajador';
+  attachHandlers();
+}
+
+function renderTrabajador(){
+  if(!workerResult){
+    return `
+    <div class="wrap">
+      <div class="month-label">${periodLabel(todayStr().slice(0,7))}</div>
+      <h1 class="headline">Consulta tu estado</h1>
+      <div class="card">
+        <div class="field-group">
+          <label for="inpCodigo">Tu código personal</label>
+          <input type="text" id="inpCodigo" placeholder="Ej. 0007" autocomplete="off">
+        </div>
+        <div class="field-group">
+          <label for="inpClave">Tu clave</label>
+          <input type="password" id="inpClave" inputmode="numeric" autocomplete="off">
+        </div>
+        <button class="primary" id="btnConsultar">Ver mi estado</button>
+        <div class="err" id="errCodigo">Código o clave incorrectos. Verifica con tu supervisor.</div>
+      </div>
+    </div>`;
+  }
+  const {codigo} = workerResult;
+  const trabajador = DATA.trabajadores.find(t=>t.codigo===codigo);
+  const periodo = todayStr().slice(0,7);
+  const catScores = computeCategoryScores(codigo, periodo);
+  const overall = computeWeighted(catScores);
+  const tier = tierOf(overall);
+  const historial = historialDelPeriodo(codigo, periodo);
+  const catsHtml = catScores.map(c=>{
+    const t = tierOf(c.score);
+    const items = historial.filter(h=>h.id===c.id);
+    return `
+    <div class="cat-card">
+      <div class="cat-head"><span class="cat-name">${c.nombre}</span><span class="cat-pct" style="color:${t.color};">${c.score}%</span></div>
+      <div class="mini-track"><div class="mini-fill" style="width:${c.score}%;background:${t.color};"></div></div>
+      ${items.length ? items.map(h=>`
+        <div class="hist-item">
+          <div class="hist-top"><span class="hist-date">${h.fecha}</span><span class="hist-meta">-${h.puntos}</span></div>
+          ${h.nota ? `<div class="hist-nota">${h.nota}</div>` : ''}
+        </div>`).join('') : '<div class="hist-empty">Sin incumplimientos en esta categoría.</div>'}
+    </div>`;
+  }).join('');
+  return `
+  <div class="wrap">
+    <div class="month-label">${periodLabel(periodo)}</div>
+    <h1 class="headline">Tu estado actual</h1>
+    <div class="card">
+      <div class="worker-name">${trabajador ? trabajador.nombre : ''}</div>
+      <div class="bar-track"><div class="bar-fill" data-target-width="${overall===null?0:overall}" style="width:0%; background:${tier.color};"></div></div>
+      <div class="bar-readout">
+        <span class="bar-score">${overall===null?'—':overall+'%'}</span>
+        <span class="tier-label" style="background:${tier.bg}; color:${tier.color};">${tier.label}</span>
+      </div>
+    </div>
+    <div class="section-title" style="margin-top:22px;">Por categoría</div>
+    ${catsHtml || '<div class="hist-empty">Sin categorías configuradas todavía.</div>'}
+    <a class="back-link linklike" id="btnVolver" style="cursor:pointer;">← Consultar otro código</a>
+  </div>`;
+}
+
+function renderPinGate(){
+  return `
+  <div class="pin-screen">
+    <h1 class="headline">Acceso administrador</h1>
+    <div class="card">
+      <div class="field-group"><label for="inpPin">PIN</label><input type="password" id="inpPin" inputmode="numeric"></div>
+      <button class="primary" id="btnEntrarPin">Entrar</button>
+      <div class="err" id="errPin">PIN incorrecto.</div>
+    </div>
+  </div>`;
+}
+
+function renderAdmin(){
+  const esAdmin = currentSession && currentSession.tipo==='admin';
+  const tabsCompletas = [
+    {k:'registrar', l:'Registrar'}, {k:'trabajadores', l:'Trabajadores'},
+    {k:'indicadores', l:'Indicadores'}, {k:'resumen', l:'Resumen'}, {k:'bonificacion', l:'Bonificación'},
+    {k:'lideres', l:'Líderes'}, {k:'qr', l:'Código QR'},
+  ];
+  const tabs = esAdmin ? tabsCompletas : [{k:'registrar', l:'Registrar'}];
+  const tabsHtml = tabs.map(t=>`<div class="tab ${adminTab===t.k?'active':''}" data-tab="${t.k}">${t.l}</div>`).join('');
+  const quienEres = `<div class="small-note" style="margin-bottom:14px;">Ingresaste como <strong>${currentSession.nombre}</strong>${esAdmin?'':' (acceso de líder)'}.</div>`;
+  let body = '';
+  if(!esAdmin){ adminTab = 'registrar'; }
+  if(adminTab==='registrar') body = renderRegistrar();
+  else if(adminTab==='trabajadores') body = renderTrabajadoresAdmin();
+  else if(adminTab==='indicadores') body = renderIndicadoresAdmin();
+  else if(adminTab==='resumen') body = renderResumen();
+  else if(adminTab==='bonificacion') body = renderBonificacion();
+  else if(adminTab==='lideres') body = renderLideresAdmin();
+  else if(adminTab==='qr') body = renderQR();
+  return `<div class="admin-wrap">${quienEres}<div class="tabs">${tabsHtml}</div>${body}</div>`;
+}
+
+function renderLideresAdmin(){
+  const activos = DATA.lideres.filter(l=>l.activo!==false);
+  const inactivos = DATA.lideres.filter(l=>l.activo===false);
+  const filasActivos = activos.map(l=>`
+    <tr><td>${l.nombre}</td><td class="mono">${l.pin}</td>
+      <td><button class="del-btn" data-off-lid="${l.id}">${pendingChange && pendingChange.kind==='lider' && pendingChange.action==='off' && pendingChange.id===l.id ? '¿Confirmar?' : 'Desactivar'}</button></td>
+    </tr>`).join('');
+  const filasInactivos = inactivos.map(l=>`
+    <tr><td>${l.nombre}</td><td class="mono">${l.pin}</td>
+      <td><button class="react-btn" data-on-lid="${l.id}">Reactivar</button></td>
+    </tr>`).join('');
+  return `
+  <div class="section-title">Líderes</div>
+  <div class="card">
+    <div class="row-flex" style="margin-bottom:14px;">
+      <input type="text" id="inpNuevoLidNombre" placeholder="Nombre del líder" style="flex:2;">
+      <input type="text" id="inpNuevoLidPin" placeholder="PIN propio" style="flex:1;">
+    </div>
+    <button class="secondary" id="btnAgregarLid">+ Agregar líder</button>
+    <table style="margin-top:16px;">
+      <thead><tr><th>Nombre</th><th>PIN</th><th></th></tr></thead>
+      <tbody>${filasActivos || '<tr><td colspan="3" class="small-note">Sin líderes activos.</td></tr>'}</tbody>
+    </table>
+    <button class="toggle-link" id="btnToggleInactivosLid">${mostrarInactivosLid?'Ocultar':'Mostrar'} inactivos (${inactivos.length})</button>
+    ${mostrarInactivosLid ? `<table style="margin-top:10px;"><tbody>${filasInactivos || '<tr><td class="small-note">Ninguno.</td></tr>'}</tbody></table>` : ''}
+    <div class="small-note">Cada líder entra con su propio PIN (distinto al PIN de administrador) y solo ve la pestaña Registrar. Cada inspección que guarde queda marcada con su nombre.</div>
+  </div>`;
+}
+
+function renderRegistrar(){
+  const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
+  const indActivos = DATA.indicadores.filter(i=>i.activo!==false);
+  const opciones = trabActivos.map(t=>`<option value="${t.codigo}" ${registrarState.trabajadorCodigo===t.codigo?'selected':''}>${t.nombre} (${t.codigo})</option>`).join('');
+  const checks = indActivos.map(ind=>`
+    <div class="chip-check ${registrarState.marcados[ind.id]?'checked':''}" data-ind="${ind.id}">
+      <input type="checkbox" data-ind-cb="${ind.id}" ${registrarState.marcados[ind.id]?'checked':''}>
+      <span>${ind.nombre}</span>
+      <span class="pts">-${ind.puntos_por_falta}</span>
+    </div>`).join('');
+  return `
+  <div class="section-title">Registrar inspección diaria</div>
+  <div class="card">
+    <div class="field-group"><label>Fecha</label><input type="text" id="inpFecha" value="${registrarState.fecha}" placeholder="AAAA-MM-DD"></div>
+    <div class="field-group"><label>Trabajador</label>
+      <select id="selTrabajador"><option value="">— Selecciona —</option>${opciones}</select>
+    </div>
+    <div class="field-group"><label>Indicadores incumplidos hoy</label>
+      ${indActivos.length ? checks : '<div class="small-note">Agrega indicadores primero en la pestaña "Indicadores".</div>'}
+    </div>
+    <div class="field-group"><label>Nota (opcional)</label><input type="text" id="inpNota" value="${registrarState.nota}" placeholder="Observación breve"></div>
+    <button class="primary" id="btnGuardarRegistro">Guardar inspección</button>
+  </div>`;
+}
+
+function renderTrabajadoresAdmin(){
+  const activos = DATA.trabajadores.filter(t=>t.activo!==false);
+  const inactivos = DATA.trabajadores.filter(t=>t.activo===false);
+  const filasActivos = activos.map(t=>`
+    <tr><td class="mono">${t.codigo}</td><td>${t.nombre}</td>
+      <td><input type="text" class="mono num-small" style="width:90px;" data-clave="${t.codigo}" value="${t.clave||''}"></td>
+      <td><input type="number" class="mono num-small" style="width:100px;" data-monto="${t.codigo}" value="${t.monto_base||0}" step="1000"></td>
+      <td><button class="del-btn" data-off-trab="${t.codigo}">${pendingChange && pendingChange.kind==='trab' && pendingChange.action==='off' && pendingChange.id===t.codigo ? '¿Confirmar?' : 'Desactivar'}</button></td>
+    </tr>`).join('');
+  const filasInactivos = inactivos.map(t=>`
+    <tr><td class="mono">${t.codigo}</td><td>${t.nombre}</td>
+      <td><button class="react-btn" data-on-trab="${t.codigo}">Reactivar</button></td>
+    </tr>`).join('');
+  return `
+  <div class="section-title">Trabajadores</div>
+  <div class="card">
+    <div class="row-flex" style="margin-bottom:14px;">
+      <input type="text" id="inpNuevoCodigo" placeholder="Código" style="flex:1;">
+      <input type="text" id="inpNuevoNombre" placeholder="Nombre completo" style="flex:2;">
+      <input type="text" id="inpNuevoClave" placeholder="Clave" style="flex:1;">
+      <input type="number" id="inpNuevoMonto" placeholder="Monto base bono" style="flex:1;">
+    </div>
+    <button class="secondary" id="btnAgregarTrab">+ Agregar trabajador</button>
+    <table style="margin-top:16px;">
+      <thead><tr><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto base bono</th><th></th></tr></thead>
+      <tbody>${filasActivos || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+    </table>
+    <button class="toggle-link" id="btnToggleInactivosTrab">${mostrarInactivosTrab?'Ocultar':'Mostrar'} inactivos (${inactivos.length})</button>
+    ${mostrarInactivosTrab ? `<table style="margin-top:10px;"><tbody>${filasInactivos || '<tr><td class="small-note">Ninguno.</td></tr>'}</tbody></table>` : ''}
+    <div class="small-note">El "monto base bono" es el 100% de bonificación de esa persona (cada quien puede tener un monto distinto) — se paga proporcional a su % de cumplimiento en la pestaña Bonificación.</div>
+  </div>`;
+}
+
+function renderIndicadoresAdmin(){
+  const activos = DATA.indicadores.filter(i=>i.activo!==false);
+  const inactivos = DATA.indicadores.filter(i=>i.activo===false);
+  const filasActivos = activos.map(ind=>`
+    <tr>
+      <td>${ind.nombre}</td>
+      <td><input type="number" class="mono num-small" data-pts="${ind.id}" value="${ind.puntos_por_falta}"></td>
+      <td><input type="number" class="mono num-small" step="0.1" data-peso="${ind.id}" value="${ind.peso}"></td>
+      <td><button class="del-btn" data-off-ind="${ind.id}">${pendingChange && pendingChange.kind==='ind' && pendingChange.action==='off' && pendingChange.id===ind.id ? '¿Confirmar?' : 'Desactivar'}</button></td>
+    </tr>`).join('');
+  const filasInactivos = inactivos.map(ind=>`
+    <tr><td>${ind.nombre}</td><td class="mono">${ind.puntos_por_falta}</td><td class="mono">${ind.peso}</td>
+      <td><button class="react-btn" data-on-ind="${ind.id}">Reactivar</button></td>
+    </tr>`).join('');
+  return `
+  <div class="section-title">Indicadores (categorías)</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Indicador</th><th>Pts/falta</th><th>Peso</th><th></th></tr></thead>
+      <tbody>${filasActivos || '<tr><td colspan="4" class="small-note">Sin indicadores activos.</td></tr>'}</tbody>
+    </table>
+    <button class="toggle-link" id="btnToggleInactivosInd">${mostrarInactivosInd?'Ocultar':'Mostrar'} inactivos (${inactivos.length})</button>
+    ${mostrarInactivosInd ? `<table style="margin-top:10px;"><tbody>${filasInactivos || '<tr><td class="small-note">Ninguno.</td></tr>'}</tbody></table>` : ''}
+    <div class="section-title" style="margin-top:24px;">Agregar indicador</div>
+    <div class="row-flex">
+      <input type="text" id="inpNuevoIndNombre" placeholder="Nombre" style="flex:2;">
+      <input type="number" id="inpNuevoIndPts" placeholder="Pts/falta" style="flex:1;">
+      <input type="number" id="inpNuevoIndPeso" placeholder="Peso" value="1" step="0.1" style="flex:1;">
+    </div>
+    <button class="secondary" style="margin-top:10px;" id="btnAgregarInd">+ Agregar indicador</button>
+    <div class="small-note">Cada indicador arranca en 100% y se descuenta solo dentro de su propia categoría. El "peso" define cuánto pesa esa categoría en el ponderado general — con el mismo peso en todas, es un promedio simple.</div>
+    <div class="section-title" style="margin-top:26px;">PIN de administrador</div>
+    <div class="row-flex">
+      <input type="text" id="inpNuevoPin" placeholder="Nuevo PIN" style="flex:1;">
+      <button class="secondary" id="btnCambiarPin">Cambiar PIN</button>
+    </div>
+  </div>`;
+}
+
+function renderResumen(){
+  const periodos = allPeriodos();
+  if(!resumenPeriodo) resumenPeriodo = periodos[0];
+  const opcionesPeriodo = periodos.map(p=>`<option value="${p}" ${p===resumenPeriodo?'selected':''}>${periodLabel(p)}</option>`).join('');
+  const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
+
+  const porTrabajador = trabActivos.map(t=>{
+    const cats = computeCategoryScores(t.codigo, resumenPeriodo);
+    const overall = computeWeighted(cats);
+    return {t, overall, cats};
+  }).sort((a,b)=>(b.overall??0)-(a.overall??0));
+
+  const promedioGeneral = porTrabajador.length
+    ? Math.round((porTrabajador.reduce((a,r)=>a+(r.overall??0),0)/porTrabajador.length)*10)/10
+    : null;
+  const tierGeneral = tierOf(promedioGeneral);
+
+  const cats = categoriesForPeriod(resumenPeriodo);
+  const promedioPorCategoria = cats.map(ind=>{
+    const valores = trabActivos.map(t=>{
+      const c = computeCategoryScores(t.codigo, resumenPeriodo).find(x=>x.id===ind.id);
+      return c ? c.score : 100;
+    });
+    const prom = valores.length ? Math.round((valores.reduce((a,v)=>a+v,0)/valores.length)*10)/10 : 100;
+    return {nombre: ind.nombre, prom};
+  });
+
+  const filasTabla = porTrabajador.map(r=>{
+    const tier = tierOf(r.overall);
+    return `<tr>
+      <td>${r.t.nombre}</td><td class="mono">${r.t.codigo}</td>
+      <td style="width:120px;"><div class="mini-track"><div class="mini-fill" style="width:${r.overall??0}%;background:${tier.color};"></div></div></td>
+      <td class="mono" style="font-weight:600;">${r.overall===null?'—':r.overall+'%'}</td>
+      <td><span style="color:${tier.color};font-weight:600;">${tier.label}</span></td>
+    </tr>`;
+  }).join('');
+
+  const detalleSel = resumenDetalleCodigo || (trabActivos[0] ? trabActivos[0].codigo : '');
+  const detalleTrab = trabActivos.find(t=>t.codigo===detalleSel);
+  const detalleCats = detalleTrab ? computeCategoryScores(detalleTrab.codigo, resumenPeriodo) : [];
+  const detalleHistorial = detalleTrab ? historialDelPeriodo(detalleTrab.codigo, resumenPeriodo) : [];
+  const opcionesDetalle = trabActivos.map(t=>`<option value="${t.codigo}" ${t.codigo===detalleSel?'selected':''}>${t.nombre}</option>`).join('');
+
+  return `
+  <div class="section-title">Resumen del periodo</div>
+  <div class="card">
+    <div class="field-group"><label>Periodo</label><select id="selPeriodo">${opcionesPeriodo}</select></div>
+
+    <div class="mini-row">
+      <div class="mini-head"><span class="nombre">Promedio general de la planta</span><span class="pct" style="color:${tierGeneral.color};">${promedioGeneral===null?'—':promedioGeneral+'%'}</span></div>
+      <div class="mini-track" style="height:14px;"><div class="mini-fill" style="width:${promedioGeneral??0}%;background:${tierGeneral.color};"></div></div>
+    </div>
+
+    <div class="section-title" style="margin-top:20px;">Promedio por categoría (toda la planta)</div>
+    ${promedioPorCategoria.map(c=>{
+      const t = tierOf(c.prom);
+      return `<div class="mini-row">
+        <div class="mini-head"><span class="nombre">${c.nombre}</span><span class="pct">${c.prom}%</span></div>
+        <div class="mini-track"><div class="mini-fill" style="width:${c.prom}%;background:${t.color};"></div></div>
+      </div>`;
+    }).join('') || '<div class="small-note">Sin indicadores configurados.</div>'}
+
+    <div class="section-title" style="margin-top:24px;">Por trabajador</div>
+    <table>
+      <thead><tr><th>Nombre</th><th>Código</th><th></th><th>Score</th><th>Nivel</th></tr></thead>
+      <tbody>${filasTabla || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+    </table>
+    <button class="secondary" style="margin-top:14px;" id="btnCopiarResumen">Copiar resumen para WhatsApp</button>
+
+    <div class="section-title" style="margin-top:26px;">Detalle por categoría de un trabajador</div>
+    <select id="selDetalle">${opcionesDetalle}</select>
+    <div style="margin-top:14px;">
+      ${detalleCats.map(c=>{
+        const t = tierOf(c.score);
+        const items = detalleHistorial.filter(h=>h.id===c.id);
+        return `<div class="mini-row">
+          <div class="mini-head"><span class="nombre">${c.nombre}${c.veces?` (${c.veces}×)`:''}</span><span class="pct">${c.score}%</span></div>
+          <div class="mini-track"><div class="mini-fill" style="width:${c.score}%;background:${t.color};"></div></div>
+          ${items.map(h=>`<div class="small-note" style="margin-top:4px;">${h.fecha} — ${h.nota||'sin observación'} <span style="color:var(--ink-soft);">(registró: ${h.registradoPor||'—'})</span></div>`).join('')}
+        </div>`;
+      }).join('') || '<div class="small-note">Sin trabajadores o indicadores aún.</div>'}
+    </div>
+  </div>`;
+}
+
+function formatCOP(v){
+  return new Intl.NumberFormat('es-CO', {style:'currency', currency:'COP', maximumFractionDigits:0}).format(v||0);
+}
+function renderBonificacion(){
+  const quincenas = allQuincenas();
+  if(!bonoQuincena) bonoQuincena = quincenas[0];
+  const opcionesPeriodo = quincenas.map(q=>`<option value="${q}" ${q===bonoQuincena?'selected':''}>${quincenaLabel(q)}</option>`).join('');
+  const {inicio, fin} = quincenaRange(bonoQuincena);
+  const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
+  const filas = trabActivos.map(t=>{
+    const overall = computeWeighted(computeCategoryScoresRange(t.codigo, inicio, fin));
+    const pct = overall===null ? 0 : overall;
+    const montoBase = Number(t.monto_base)||0;
+    const valor = montoBase * (pct/100);
+    return {codigo:t.codigo, nombre:t.nombre, pct, montoBase, valor};
+  }).sort((a,b)=> b.pct-a.pct);
+  const totalBono = filas.reduce((a,f)=>a+f.valor,0);
+
+  return `
+  <div class="section-title">Bonificación</div>
+  <div class="card">
+    <div class="field-group"><label>Quincena</label><select id="selPeriodoBono">${opcionesPeriodo}</select></div>
+    <table>
+      <thead><tr><th>Código</th><th>Nombre</th><th>%</th><th>Monto base</th><th>Bonificación</th></tr></thead>
+      <tbody>${filas.map(f=>`<tr><td class="mono">${f.codigo}</td><td>${f.nombre}</td><td class="mono">${f.pct}%</td><td class="mono">${formatCOP(f.montoBase)}</td><td class="mono">${formatCOP(f.valor)}</td></tr>`).join('') || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+      ${filas.length ? `<tfoot><tr><td colspan="4" style="font-weight:600;">Total a pagar</td><td class="mono" style="font-weight:600;">${formatCOP(totalBono)}</td></tr></tfoot>` : ''}
+    </table>
+    <button class="secondary" style="margin-top:14px;" id="btnGenerarPdfBono">Generar PDF / Imprimir</button>
+    <div class="small-note">El monto base de cada quien se edita en la pestaña Trabajadores. El valor pagado es proporcional a su % de cumplimiento ponderado de esta quincena.</div>
+  </div>`;
+}
+
+function renderQR(){
+  return `
+  <div class="section-title">Código QR de acceso</div>
+  <div class="qr-box">
+    <div id="qrcode"></div>
+    <div class="small-note">Este QR apunta a la dirección donde está publicada esta página ahora mismo:<br><span class="mono" id="urlActual"></span></div>
+  </div>`;
+}
+
+/* ---------- HANDLERS ---------- */
+function attachHandlers(){
+  document.getElementById('btnToggleAdmin').onclick = ()=>{
+    if(view==='trabajador'){ if(!currentSession){ workerResult = null; limpiarDatos(); } view = currentSession ? 'admin' : 'pinGate'; }
+    else { view = 'trabajador'; workerResult = null; currentSession = null; SESION_PIN = null; limpiarDatos(); }
+    render();
+  };
+
+  if(view==='trabajador'){
+    if(!workerResult){
+      const btn = document.getElementById('btnConsultar');
+      const inp = document.getElementById('inpCodigo');
+      const inpClave = document.getElementById('inpClave');
+      const doConsult = async ()=>{
+        const codigo = inp.value.trim();
+        const clave = inpClave.value.trim();
+        if(!codigo || !clave){ document.getElementById('errCodigo').style.display='block'; return; }
+        btn.disabled = true;
+        const ok = await consultarTrabajador(codigo, clave);
+        btn.disabled = false;
+        if(!ok){ document.getElementById('errCodigo').style.display='block'; return; }
+        workerResult = {codigo};
+        render();
+      };
+      btn.onclick = doConsult;
+      inp.addEventListener('keydown', e=>{ if(e.key==='Enter') doConsult(); });
+      inpClave.addEventListener('keydown', e=>{ if(e.key==='Enter') doConsult(); });
+    } else {
+      document.getElementById('btnVolver').onclick = ()=>{ workerResult=null; limpiarDatos(); render(); };
+      requestAnimationFrame(()=>{
+        const fill = document.querySelector('.bar-fill');
+        if(fill){ const target = fill.getAttribute('data-target-width'); requestAnimationFrame(()=>{ fill.style.width = target+'%'; }); }
+      });
+    }
+  }
+
+  if(view==='pinGate'){
+    const btn = document.getElementById('btnEntrarPin');
+    const inp = document.getElementById('inpPin');
+    const doEnter = async ()=>{
+      const pin = inp.value.trim();
+      if(!pin){ document.getElementById('errPin').style.display='block'; return; }
+      btn.disabled = true;
+      const ok = await abrirPanel(pin);
+      btn.disabled = false;
+      if(ok){ view='admin'; adminTab='registrar'; render(); return; }
+      document.getElementById('errPin').style.display='block';
+    };
+    btn.onclick = doEnter;
+    inp.addEventListener('keydown', e=>{ if(e.key==='Enter') doEnter(); });
+  }
+
+  if(view==='admin'){
+    document.querySelectorAll('.tab').forEach(tabEl=>{
+      tabEl.onclick = ()=>{ adminTab = tabEl.dataset.tab; pendingChange = null; render(); };
+    });
+
+    if(adminTab==='registrar'){
+      document.getElementById('inpFecha').onchange = (e)=>{ registrarState.fecha = e.target.value; };
+      document.getElementById('selTrabajador').onchange = (e)=>{ registrarState.trabajadorCodigo = e.target.value; };
+      document.getElementById('inpNota').oninput = (e)=>{ registrarState.nota = e.target.value; };
+      document.querySelectorAll('[data-ind-cb]').forEach(cb=>{
+        cb.onchange = ()=>{ registrarState.marcados[cb.dataset.indCb] = cb.checked; render(); };
+      });
+      document.getElementById('btnGuardarRegistro').onclick = async ()=>{
+        if(!registrarState.trabajadorCodigo){ showToast('Selecciona un trabajador.'); return; }
+        const ids = Object.keys(registrarState.marcados).filter(k=>registrarState.marcados[k]);
+        if(ids.length===0){ showToast('Marca al menos un indicador.'); return; }
+        const filas = ids.map(id=>({fecha: registrarState.fecha, trabajador_codigo: registrarState.trabajadorCodigo, indicador_id: id, nota: registrarState.nota, registrado_por: currentSession.nombre}));
+        const {error} = await db.from('registros').insert(filas);
+        if(error){ showToast('No se pudo guardar: '+error.message); return; }
+        showToast('Inspección guardada.');
+        registrarState = { fecha: todayStr(), trabajadorCodigo:'', marcados:{}, nota:'' };
+        await fetchAll(); render();
+      };
+    }
+
+    if(adminTab==='trabajadores'){
+      document.getElementById('btnAgregarTrab').onclick = async ()=>{
+        const codigo = document.getElementById('inpNuevoCodigo').value.trim();
+        const nombre = document.getElementById('inpNuevoNombre').value.trim();
+        const clave = document.getElementById('inpNuevoClave').value.trim();
+        const monto = parseFloat(document.getElementById('inpNuevoMonto').value) || 0;
+        if(!codigo || !nombre){ showToast('Completa código y nombre.'); return; }
+        if(!clave){ showToast('Ponle una clave para que solo él/ella pueda ver su score.'); return; }
+        const {error} = await db.from('trabajadores').insert({codigo, nombre, clave, monto_base: monto});
+        if(error){ showToast('No se pudo agregar: '+error.message); return; }
+        showToast('Trabajador agregado.');
+        await fetchAll(); render();
+      };
+      document.querySelectorAll('[data-clave]').forEach(inp=>{
+        inp.onchange = async ()=>{
+          const {error} = await db.from('trabajadores').update({clave: inp.value.trim()}).eq('codigo', inp.dataset.clave);
+          if(error){ showToast('Error: '+error.message); return; }
+          showToast('Clave actualizada.');
+          await fetchAll();
+        };
+      });
+      document.querySelectorAll('[data-monto]').forEach(inp=>{
+        inp.onchange = async ()=>{
+          const {error} = await db.from('trabajadores').update({monto_base: parseFloat(inp.value)||0}).eq('codigo', inp.dataset.monto);
+          if(error){ showToast('Error: '+error.message); return; }
+          showToast('Monto base actualizado.');
+          await fetchAll();
+        };
+      });
+      document.querySelectorAll('[data-off-trab]').forEach(b=>{
+        b.onclick = async ()=>{
+          const codigo = b.dataset.offTrab;
+          if(pendingChange && pendingChange.kind==='trab' && pendingChange.action==='off' && pendingChange.id===codigo){
+            const {error} = await db.from('trabajadores').update({activo:false}).eq('codigo', codigo);
+            pendingChange = null;
+            if(error){ showToast('Error: '+error.message); return; }
+            showToast('Trabajador desactivado. Su historial se conserva.');
+            await fetchAll(); render();
+          } else { pendingChange = {kind:'trab', action:'off', id:codigo}; render(); }
+        };
+      });
+      document.querySelectorAll('[data-on-trab]').forEach(b=>{
+        b.onclick = async ()=>{
+          const {error} = await db.from('trabajadores').update({activo:true}).eq('codigo', b.dataset.onTrab);
+          if(error){ showToast('Error: '+error.message); return; }
+          await fetchAll(); render();
+        };
+      });
+      const toggleBtn = document.getElementById('btnToggleInactivosTrab');
+      if(toggleBtn) toggleBtn.onclick = ()=>{ mostrarInactivosTrab = !mostrarInactivosTrab; render(); };
+    }
+
+    if(adminTab==='indicadores'){
+      document.querySelectorAll('[data-pts]').forEach(inp=>{
+        inp.onchange = async ()=>{
+          const {error} = await db.from('indicadores').update({puntos_por_falta: parseInt(inp.value,10)||0}).eq('id', inp.dataset.pts);
+          if(error){ showToast('Error: '+error.message); return; }
+          showToast('Puntos actualizados.');
+          await fetchAll();
+        };
+      });
+      document.querySelectorAll('[data-peso]').forEach(inp=>{
+        inp.onchange = async ()=>{
+          const {error} = await db.from('indicadores').update({peso: parseFloat(inp.value)||0}).eq('id', inp.dataset.peso);
+          if(error){ showToast('Error: '+error.message); return; }
+          showToast('Peso actualizado.');
+          await fetchAll();
+        };
+      });
+      document.querySelectorAll('[data-off-ind]').forEach(b=>{
+        b.onclick = async ()=>{
+          const id = b.dataset.offInd;
+          if(pendingChange && pendingChange.kind==='ind' && pendingChange.action==='off' && pendingChange.id===id){
+            const {error} = await db.from('indicadores').update({activo:false}).eq('id', id);
+            pendingChange = null;
+            if(error){ showToast('Error: '+error.message); return; }
+            showToast('Indicador desactivado.');
+            await fetchAll(); render();
+          } else { pendingChange = {kind:'ind', action:'off', id}; render(); }
+        };
+      });
+      document.querySelectorAll('[data-on-ind]').forEach(b=>{
+        b.onclick = async ()=>{
+          const {error} = await db.from('indicadores').update({activo:true}).eq('id', b.dataset.onInd);
+          if(error){ showToast('Error: '+error.message); return; }
+          await fetchAll(); render();
+        };
+      });
+      document.getElementById('btnAgregarInd').onclick = async ()=>{
+        const nombre = document.getElementById('inpNuevoIndNombre').value.trim();
+        const pts = parseInt(document.getElementById('inpNuevoIndPts').value,10);
+        const peso = parseFloat(document.getElementById('inpNuevoIndPeso').value);
+        if(!nombre || isNaN(pts)){ showToast('Completa nombre y puntos.'); return; }
+        const {error} = await db.from('indicadores').insert({id: uid(), nombre, puntos_por_falta: pts, peso: isNaN(peso)?1:peso});
+        if(error){ showToast('No se pudo agregar: '+error.message); return; }
+        showToast('Indicador agregado.');
+        await fetchAll(); render();
+      };
+      const toggleBtn = document.getElementById('btnToggleInactivosInd');
+      if(toggleBtn) toggleBtn.onclick = ()=>{ mostrarInactivosInd = !mostrarInactivosInd; render(); };
+      document.getElementById('btnCambiarPin').onclick = async ()=>{
+        const nuevo = document.getElementById('inpNuevoPin').value.trim();
+        if(!nuevo){ showToast('Escribe el nuevo PIN.'); return; }
+        const {error} = await db.from('ajustes').update({admin_pin:nuevo}).eq('id',1);
+        if(error){ showToast('Error: '+error.message); return; }
+        SESION_PIN = nuevo;
+        showToast('PIN actualizado.');
+        await fetchAll();
+      };
+    }
+
+    if(adminTab==='resumen'){
+      document.getElementById('selPeriodo').onchange = (e)=>{ resumenPeriodo = e.target.value; render(); };
+      const selDet = document.getElementById('selDetalle');
+      if(selDet) selDet.onchange = (e)=>{ resumenDetalleCodigo = e.target.value; render(); };
+      document.getElementById('btnCopiarResumen').onclick = ()=>{
+        const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
+        const lineas = [`Indicador de planta — ${periodLabel(resumenPeriodo)}`];
+        trabActivos.forEach(t=>{
+          const overall = computeWeighted(computeCategoryScores(t.codigo, resumenPeriodo));
+          const tier = tierOf(overall);
+          lineas.push(`${t.nombre}: ${overall===null?'—':overall+'%'} (${tier.label})`);
+        });
+        const texto = lineas.join('\n');
+        const fallbackCopy = ()=>{
+          try{
+            const ta = document.createElement('textarea');
+            ta.value = texto; ta.style.position='fixed'; ta.style.opacity='0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+            showToast('Resumen copiado. Ya puedes pegarlo en WhatsApp.');
+          }catch(e){ showToast('No se pudo copiar automáticamente.'); }
+        };
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(texto).then(()=>showToast('Resumen copiado. Ya puedes pegarlo en WhatsApp.')).catch(fallbackCopy);
+        } else { fallbackCopy(); }
+      };
+    }
+
+    if(adminTab==='bonificacion'){
+      document.getElementById('selPeriodoBono').onchange = (e)=>{ bonoQuincena = e.target.value; render(); };
+      document.getElementById('btnGenerarPdfBono').onclick = ()=>{
+        const {inicio, fin} = quincenaRange(bonoQuincena);
+        const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
+        const filas = trabActivos.map(t=>{
+          const overall = computeWeighted(computeCategoryScoresRange(t.codigo, inicio, fin));
+          const pct = overall===null ? 0 : overall;
+          const montoBase = Number(t.monto_base)||0;
+          return {codigo:t.codigo, nombre:t.nombre, pct, valor: montoBase*(pct/100)};
+        }).sort((a,b)=> b.pct-a.pct);
+        const total = filas.reduce((a,f)=>a+f.valor,0);
+        const printArea = document.getElementById('printArea');
+        printArea.innerHTML = `
+          <div style="font-family:'Space Grotesk',sans-serif;color:#1E2426;padding:24px;">
+            <div class="print-header">
+              <div><div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#5B6668;">${EMPRESA.etiqueta}</div>
+                   <div style="font-size:18px;font-weight:700;">Bonificación de desempeño</div></div>
+              <div style="text-align:right;font-size:13px;">${quincenaLabel(bonoQuincena)}</div>
+            </div>
+            <table class="print-table">
+              <thead><tr><th>Código</th><th>Nombre</th><th>% Cumplimiento</th><th>Bonificación</th></tr></thead>
+              <tbody>${filas.map(f=>`<tr><td>${f.codigo}</td><td>${f.nombre}</td><td>${f.pct}%</td><td>${formatCOP(f.valor)}</td></tr>`).join('')}</tbody>
+              <tfoot><tr><td colspan="3" style="font-weight:700;">Total a pagar</td><td style="font-weight:700;">${formatCOP(total)}</td></tr></tfoot>
+            </table>
+          </div>`;
+        window.print();
+      };
+    }
+
+    if(adminTab==='lideres'){
+      document.getElementById('btnAgregarLid').onclick = async ()=>{
+        const nombre = document.getElementById('inpNuevoLidNombre').value.trim();
+        const pin = document.getElementById('inpNuevoLidPin').value.trim();
+        if(!nombre || !pin){ showToast('Completa nombre y PIN.'); return; }
+        if(pin === DATA.adminPin){ showToast('Ese PIN ya lo usa el administrador, elige otro.'); return; }
+        const {error} = await db.from('lideres').insert({id: uid(), nombre, pin});
+        if(error){ showToast('No se pudo agregar: '+error.message); return; }
+        showToast('Líder agregado.');
+        await fetchAll(); render();
+      };
+      document.querySelectorAll('[data-off-lid]').forEach(b=>{
+        b.onclick = async ()=>{
+          const id = b.dataset.offLid;
+          if(pendingChange && pendingChange.kind==='lider' && pendingChange.action==='off' && pendingChange.id===id){
+            const {error} = await db.from('lideres').update({activo:false}).eq('id', id);
+            pendingChange = null;
+            if(error){ showToast('Error: '+error.message); return; }
+            showToast('Líder desactivado.');
+            await fetchAll(); render();
+          } else { pendingChange = {kind:'lider', action:'off', id}; render(); }
+        };
+      });
+      document.querySelectorAll('[data-on-lid]').forEach(b=>{
+        b.onclick = async ()=>{
+          const {error} = await db.from('lideres').update({activo:true}).eq('id', b.dataset.onLid);
+          if(error){ showToast('Error: '+error.message); return; }
+          await fetchAll(); render();
+        };
+      });
+      const toggleBtn = document.getElementById('btnToggleInactivosLid');
+      if(toggleBtn) toggleBtn.onclick = ()=>{ mostrarInactivosLid = !mostrarInactivosLid; render(); };
+    }
+
+    if(adminTab==='qr'){
+      document.getElementById('urlActual').textContent = window.location.href;
+      const qrEl = document.getElementById('qrcode');
+      qrEl.innerHTML = '';
+      if(window.QRCode){
+        new QRCode(qrEl, {text: window.location.href, width:200, height:200, colorDark:'#1E2426', colorLight:'#ffffff'});
+      } else {
+        qrEl.innerHTML = '<div class="small-note">No se pudo cargar el generador de QR.</div>';
+      }
+    }
+  }
+}
+
+(async function init(){
+  if(!window.EMPRESA || !window.EMPRESA.id){
+    document.getElementById('app').innerHTML = `
+      <div class="wrap"><div class="card">
+        <h1 class="headline" style="font-size:17px;">Falta el archivo config.js</h1>
+        <div class="small-note">Este indicador necesita el archivo <b>config.js</b> en la misma carpeta que index.html, con los datos de la empresa y de su proyecto Supabase.</div>
+      </div></div>`;
+    return;
+  }
+  aplicarMarca();
+  registrarState.fecha = todayStr();
+  if(SUPABASE_URL.indexOf('PEGA_AQUI')!==-1 || SUPABASE_ANON_KEY.indexOf('PEGA_AQUI')!==-1){
+    document.getElementById('app').innerHTML = `
+      <div class="wrap"><div class="card">
+        <h1 class="headline" style="font-size:17px;">Falta conectar Supabase</h1>
+        <div class="small-note">Abre <b>config.js</b> y reemplaza <b>supabaseUrl</b> y <b>supabaseAnonKey</b> con los datos de tu proyecto (Project Settings → API). Luego recarga la página.</div>
+      </div></div>`;
+    return;
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  render();
+})();
+</script>
+</body>
+</html>
