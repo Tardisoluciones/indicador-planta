@@ -8,6 +8,7 @@
 window.EMPRESA = {
   id: 'amazonas',                                   // NO cambiar: es la llave de la empresa en la base de datos
   nombre: 'Amazonas',
+  nombreApp: 'Amazonas',                       // nombre bajo el ícono en iPhone
   etiqueta: 'Amazonas · Planta',
   tituloPestana: 'Indicador de Planta — Amazonas',
   logo: 'logo.png',

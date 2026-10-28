@@ -8,6 +8,7 @@
 window.EMPRESA = {
   id: 'gerco',                                   // NO cambiar: es la llave de la empresa en la base de datos
   nombre: 'Gerco',
+  nombreApp: 'Gerco',                          // nombre bajo el ícono en iPhone
   etiqueta: 'Gerco · Planta',
   tituloPestana: 'Indicador de Planta — Gerco',
   logo: 'logo.png',

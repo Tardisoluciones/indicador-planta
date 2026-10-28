@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>Indicador de Planta</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FFFFFF">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Indicador">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script src="config.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -96,6 +104,10 @@
   .del-btn{background:none;border:none;color:var(--rojo);cursor:pointer;font-size:12px;font-family:inherit;}
   .react-btn{background:none;border:none;color:var(--steel);cursor:pointer;font-size:12px;font-family:inherit;}
   select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-family:'Space Grotesk',sans-serif;font-size:14px;background:var(--input-bg);color:var(--ink);}
+  .install-box{margin-top:16px;text-align:center;}
+  .install-btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--steel);font-family:inherit;font-weight:600;font-size:13px;cursor:pointer;box-shadow:var(--card-shadow);}
+  .install-btn img{width:22px;height:22px;border-radius:6px;}
+  .install-hint{font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5;}
   .loading{text-align:center;padding:60px 20px;color:var(--ink-soft);font-size:13px;}
   .toggle-link{font-size:12px;color:var(--steel);cursor:pointer;background:none;border:none;font-family:inherit;padding:0;margin-top:10px;display:inline-block;}
   .num-small{width:70px;padding:6px;}
@@ -133,6 +145,23 @@ if(typeof EMPRESA==='undefined'){ window.EMPRESA = null; }
 const SUPABASE_URL = (window.EMPRESA && EMPRESA.supabaseUrl) || 'PEGA_AQUI';
 const SUPABASE_ANON_KEY = (window.EMPRESA && EMPRESA.supabaseAnonKey) || 'PEGA_AQUI';
 /* ==================================================================== */
+/* ---------- APP INSTALABLE (PWA) ---------- */
+let installPrompt = null;
+function esStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+function esIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1); }
+window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); installPrompt = e; if(view==='trabajador' && !workerResult) render(); });
+window.addEventListener('appinstalled', ()=>{ installPrompt = null; showToast('App instalada. Búscala en tu pantalla de inicio.'); render(); });
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+function renderInstalar(){
+  if(esStandalone()) return '';
+  const icono = `<img src="icons/icon-192.png" alt="">`;
+  if(installPrompt) return `<div class="install-box"><button class="install-btn" id="btnInstalar">${icono}Instalar app en este celular</button></div>`;
+  if(esIOS()) return `<div class="install-box"><div class="install-hint">Para tenerla como app en iPhone: toca <b>Compartir</b> y luego <b>"Agregar a inicio"</b>.</div></div>`;
+  return '';
+}
+
 function aplicarMarca(){
   const e = window.EMPRESA; if(!e) return;
   document.title = e.tituloPestana || ('Indicador de Planta — ' + e.nombre);
@@ -142,6 +171,8 @@ function aplicarMarca(){
   if(e.logoAlto) root.setProperty('--logo-h', e.logoAlto + 'px');
   if(e.logoAltoMovil) root.setProperty('--logo-h-movil', e.logoAltoMovil + 'px');
   document.getElementById('brandEyebrow').textContent = e.etiqueta;
+  const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if(appTitle) appTitle.setAttribute('content', e.nombreApp || e.nombre);
   Object.entries(e.tema || {}).forEach(([k,v])=> root.setProperty('--'+k, v));
 }
 
@@ -321,6 +352,7 @@ function render(){
   const app = document.getElementById('app');
   if(view==='trabajador') app.innerHTML = renderTrabajador();
   else if(view==='pinGate') app.innerHTML = renderPinGate();
+  else if(view==='cambiarPin') app.innerHTML = renderCambiarPin();
   else app.innerHTML = renderAdmin();
   document.getElementById('btnToggleAdmin').textContent = (view==='trabajador') ? 'Panel administrador' : 'Ver como trabajador';
   attachHandlers();
@@ -344,6 +376,7 @@ function renderTrabajador(){
         <button class="primary" id="btnConsultar">Ver mi estado</button>
         <div class="err" id="errCodigo">Código o clave incorrectos. Verifica con tu supervisor.</div>
       </div>
+      ${renderInstalar()}
     </div>`;
   }
   const {codigo} = workerResult;
@@ -390,9 +423,24 @@ function renderPinGate(){
   <div class="pin-screen">
     <h1 class="headline">Acceso administrador</h1>
     <div class="card">
-      <div class="field-group"><label for="inpPin">PIN</label><input type="password" id="inpPin" inputmode="numeric"></div>
+      <div class="field-group"><label for="inpPin">PIN</label><input type="password" id="inpPin" inputmode="numeric" maxlength="6" autocomplete="off"></div>
       <button class="primary" id="btnEntrarPin">Entrar</button>
       <div class="err" id="errPin">PIN incorrecto.</div>
+    </div>
+  </div>`;
+}
+
+function pinValido(p){ return /^[0-9]{6}$/.test(p||''); }
+function renderCambiarPin(){
+  return `
+  <div class="pin-screen">
+    <h1 class="headline">Actualiza tu PIN</h1>
+    <div class="card">
+      <div class="small-note" style="margin:0 0 14px;">Por seguridad, el PIN de administrador ahora debe tener <b>6 dígitos</b>. Crea uno nuevo para continuar.</div>
+      <div class="field-group"><label for="inpPinNuevo">Nuevo PIN (6 dígitos)</label><input type="password" id="inpPinNuevo" inputmode="numeric" maxlength="6" autocomplete="off"></div>
+      <div class="field-group"><label for="inpPinNuevo2">Repite el nuevo PIN</label><input type="password" id="inpPinNuevo2" inputmode="numeric" maxlength="6" autocomplete="off"></div>
+      <button class="primary" id="btnGuardarPinNuevo">Guardar y entrar</button>
+      <div class="err" id="errPinNuevo"></div>
     </div>
   </div>`;
 }
@@ -423,7 +471,8 @@ function renderLideresAdmin(){
   const activos = DATA.lideres.filter(l=>l.activo!==false);
   const inactivos = DATA.lideres.filter(l=>l.activo===false);
   const filasActivos = activos.map(l=>`
-    <tr><td>${l.nombre}</td><td class="mono">${l.pin}</td>
+    <tr><td>${l.nombre}</td>
+      <td><input type="text" class="mono num-small" style="width:96px;${pinValido(l.pin)?'':'border-color:var(--rojo);'}" data-lid-pin="${l.id}" value="${l.pin}" inputmode="numeric" maxlength="6">${pinValido(l.pin)?'':'<div style="color:var(--rojo);font-size:11px;margin-top:3px;">Asigna 6 dígitos</div>'}</td>
       <td><button class="del-btn" data-off-lid="${l.id}">${pendingChange && pendingChange.kind==='lider' && pendingChange.action==='off' && pendingChange.id===l.id ? '¿Confirmar?' : 'Desactivar'}</button></td>
     </tr>`).join('');
   const filasInactivos = inactivos.map(l=>`
@@ -435,7 +484,7 @@ function renderLideresAdmin(){
   <div class="card">
     <div class="row-flex" style="margin-bottom:14px;">
       <input type="text" id="inpNuevoLidNombre" placeholder="Nombre del líder" style="flex:2;">
-      <input type="text" id="inpNuevoLidPin" placeholder="PIN propio" style="flex:1;">
+      <input type="text" id="inpNuevoLidPin" placeholder="PIN (6 dígitos)" inputmode="numeric" maxlength="6" style="flex:1;">
     </div>
     <button class="secondary" id="btnAgregarLid">+ Agregar líder</button>
     <table style="margin-top:16px;">
@@ -444,7 +493,7 @@ function renderLideresAdmin(){
     </table>
     <button class="toggle-link" id="btnToggleInactivosLid">${mostrarInactivosLid?'Ocultar':'Mostrar'} inactivos (${inactivos.length})</button>
     ${mostrarInactivosLid ? `<table style="margin-top:10px;"><tbody>${filasInactivos || '<tr><td class="small-note">Ninguno.</td></tr>'}</tbody></table>` : ''}
-    <div class="small-note">Cada líder entra con su propio PIN (distinto al PIN de administrador) y solo ve la pestaña Registrar. Cada inspección que guarde queda marcada con su nombre.</div>
+    <div class="small-note">Cada líder entra con su propio PIN de 6 dígitos (distinto al PIN de administrador) y solo ve la pestaña Registrar. Cada inspección que guarde queda marcada con su nombre.</div>
   </div>`;
 }
 
@@ -539,7 +588,7 @@ function renderIndicadoresAdmin(){
     <div class="small-note">Cada indicador arranca en 100% y se descuenta solo dentro de su propia categoría. El "peso" define cuánto pesa esa categoría en el ponderado general — con el mismo peso en todas, es un promedio simple.</div>
     <div class="section-title" style="margin-top:26px;">PIN de administrador</div>
     <div class="row-flex">
-      <input type="text" id="inpNuevoPin" placeholder="Nuevo PIN" style="flex:1;">
+      <input type="password" id="inpNuevoPin" placeholder="Nuevo PIN (6 dígitos)" inputmode="numeric" maxlength="6" autocomplete="off" style="flex:1;">
       <button class="secondary" id="btnCambiarPin">Cambiar PIN</button>
     </div>
   </div>`;
@@ -696,6 +745,8 @@ function attachHandlers(){
         render();
       };
       btn.onclick = doConsult;
+      const btnInst = document.getElementById('btnInstalar');
+      if(btnInst) btnInst.onclick = async ()=>{ if(!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice.catch(()=>{}); installPrompt = null; render(); };
       inp.addEventListener('keydown', e=>{ if(e.key==='Enter') doConsult(); });
       inpClave.addEventListener('keydown', e=>{ if(e.key==='Enter') doConsult(); });
     } else {
@@ -716,11 +767,34 @@ function attachHandlers(){
       btn.disabled = true;
       const ok = await abrirPanel(pin);
       btn.disabled = false;
-      if(ok){ view='admin'; adminTab='registrar'; render(); return; }
+      if(ok){ view = (currentSession && currentSession.cambiar_pin) ? 'cambiarPin' : 'admin'; adminTab='registrar'; render(); return; }
       document.getElementById('errPin').style.display='block';
     };
     btn.onclick = doEnter;
     inp.addEventListener('keydown', e=>{ if(e.key==='Enter') doEnter(); });
+  }
+
+  if(view==='cambiarPin'){
+    const btnG = document.getElementById('btnGuardarPinNuevo');
+    const err = document.getElementById('errPinNuevo');
+    const guardar = async ()=>{
+      const a = document.getElementById('inpPinNuevo').value.trim();
+      const b = document.getElementById('inpPinNuevo2').value.trim();
+      const fallo = (m)=>{ err.textContent = m; err.style.display='block'; };
+      if(!pinValido(a)) return fallo('El PIN debe tener exactamente 6 números.');
+      if(a!==b) return fallo('Los dos PIN no coinciden.');
+      btnG.disabled = true;
+      const {error} = await db.from('ajustes').update({admin_pin:a}).eq('id',1);
+      btnG.disabled = false;
+      if(error) return fallo(error.message);
+      SESION_PIN = a;
+      const ok = await fetchAll();
+      if(!ok) return fallo('PIN guardado, pero no se pudo abrir el panel. Vuelve a entrar con el nuevo PIN.');
+      showToast('PIN actualizado. Guárdalo en un lugar seguro.');
+      view = 'admin'; adminTab = 'registrar'; render();
+    };
+    btnG.onclick = guardar;
+    document.getElementById('inpPinNuevo2').addEventListener('keydown', e=>{ if(e.key==='Enter') guardar(); });
   }
 
   if(view==='admin'){
@@ -850,7 +924,7 @@ function attachHandlers(){
       if(toggleBtn) toggleBtn.onclick = ()=>{ mostrarInactivosInd = !mostrarInactivosInd; render(); };
       document.getElementById('btnCambiarPin').onclick = async ()=>{
         const nuevo = document.getElementById('inpNuevoPin').value.trim();
-        if(!nuevo){ showToast('Escribe el nuevo PIN.'); return; }
+        if(!pinValido(nuevo)){ showToast('El PIN debe tener exactamente 6 números.'); return; }
         const {error} = await db.from('ajustes').update({admin_pin:nuevo}).eq('id',1);
         if(error){ showToast('Error: '+error.message); return; }
         SESION_PIN = nuevo;
@@ -921,12 +995,23 @@ function attachHandlers(){
         const nombre = document.getElementById('inpNuevoLidNombre').value.trim();
         const pin = document.getElementById('inpNuevoLidPin').value.trim();
         if(!nombre || !pin){ showToast('Completa nombre y PIN.'); return; }
+        if(!pinValido(pin)){ showToast('El PIN debe tener exactamente 6 números.'); return; }
         if(pin === DATA.adminPin){ showToast('Ese PIN ya lo usa el administrador, elige otro.'); return; }
         const {error} = await db.from('lideres').insert({id: uid(), nombre, pin});
         if(error){ showToast('No se pudo agregar: '+error.message); return; }
         showToast('Líder agregado.');
         await fetchAll(); render();
       };
+      document.querySelectorAll('[data-lid-pin]').forEach(inp=>{
+        inp.onchange = async ()=>{
+          const pin = inp.value.trim();
+          if(!pinValido(pin)){ showToast('El PIN debe tener exactamente 6 números.'); return; }
+          const {error} = await db.from('lideres').update({pin}).eq('id', inp.dataset.lidPin);
+          if(error){ showToast('Error: '+error.message); return; }
+          showToast('PIN del líder actualizado.');
+          await fetchAll(); render();
+        };
+      });
       document.querySelectorAll('[data-off-lid]').forEach(b=>{
         b.onclick = async ()=>{
           const id = b.dataset.offLid;
