@@ -987,7 +987,11 @@ function renderTurnosAdmin(){
     <button class="xl-btn" id="btnXlTurPlantilla">⬇ Descargar plantilla Excel</button>
     <label class="xl-btn verde" for="inpXlTur">⬆ Cargar Excel</label>
     <input type="file" id="inpXlTur" accept=".xlsx,.xls,.csv" style="display:none;">
-  </div>`:''}
+  </div>`:`<div class="xl-bar">
+    <button class="xl-btn" disabled style="opacity:.45;cursor:not-allowed;">⬇ Descargar plantilla Excel</button>
+    <button class="xl-btn verde" disabled style="opacity:.45;cursor:not-allowed;">⬆ Cargar Excel</button>
+  </div>
+  <div class="xl-warn">Para programar turnos (a mano o por Excel) primero carga los trabajadores. <button class="toggle-link" id="btnIrTrabajadores" style="margin:0;">Ir a Trabajadores →</button></div>`}
   ${renderXlTurnos()}
   <div class="small-note" style="margin:0 0 12px;">${programados} de ${trabActivos.length} personas programadas. Marca los días de cada persona y su horario. Quien no tenga días marcados queda libre esa semana.</div>
   ${trabActivos.length ? filas : '<div class="empty-state">Primero agrega trabajadores en la pestaña "Trabajadores".</div>'}
@@ -1607,6 +1611,7 @@ function attachHandlers(){
       document.querySelectorAll('[data-t-lv]').forEach(b=>{ b.onclick = ()=>{ filaDraft(b.dataset.tLv).dias = [1,2,3,4,5]; marcar(); render(); }; });
       document.querySelectorAll('[data-t-ls]').forEach(b=>{ b.onclick = ()=>{ filaDraft(b.dataset.tLs).dias = [1,2,3,4,5,6]; marcar(); render(); }; });
       document.querySelectorAll('[data-t-clear]').forEach(b=>{ b.onclick = ()=>{ filaDraft(b.dataset.tClear).dias = []; marcar(); render(); }; });
+      const bit = document.getElementById('btnIrTrabajadores'); if(bit) bit.onclick = ()=>{ adminTab='trabajadores'; render(); window.scrollTo(0,0); };
       const bxp = document.getElementById('btnXlTurPlantilla');
       if(bxp) bxp.onclick = async ()=>{ try{ await plantillaTurnos(); }catch(e){ showToast(e.message); } };
       const ixt = document.getElementById('inpXlTur');
