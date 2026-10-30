@@ -51,6 +51,7 @@
   input:focus{outline:2px solid var(--steel);outline-offset:1px;}
   button.primary{width:100%;padding:13px;border:none;border-radius:9px;background:var(--steel);color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;cursor:pointer;}
   button.primary:hover{background:var(--steel-dark);}
+  button.primary:disabled,button.secondary:disabled{opacity:.45;cursor:not-allowed;}
   button.secondary{padding:10px 14px;border:1px solid var(--line);border-radius:9px;background:#fff;font-family:inherit;font-weight:500;font-size:13px;cursor:pointer;color:var(--ink);}
   button.secondary:hover{border-color:var(--steel);}
   .err{color:var(--rojo);font-size:13px;margin-top:8px;display:none;}
@@ -175,6 +176,18 @@
   .file-btn{display:inline-block;padding:10px 14px;border:1px dashed var(--line);border-radius:9px;cursor:pointer;font-size:13px;color:var(--steel);font-weight:600;}
   .chk-inline{display:flex;align-items:center;gap:8px;font-size:13px;margin:10px 0 14px;color:var(--ink);}
   .chk-inline input{width:auto;}
+  .xl-bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;}
+  .xl-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);font-family:inherit;font-size:13px;font-weight:600;color:var(--steel);cursor:pointer;}
+  .xl-btn.verde{border-color:#2F8F5B;color:#2F8F5B;}
+  .xl-panel{border:1px solid var(--steel);border-radius:12px;padding:14px;margin:0 0 16px;background:var(--card);}
+  .xl-panel h4{margin:0 0 8px;font-size:14px;}
+  .xl-res{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;}
+  .xl-res span{padding:4px 10px;border-radius:999px;background:var(--track);font-weight:600;}
+  .xl-res .ok{background:#E7F3EC;color:#2F8F5B;} .xl-res .er{background:#F6DEDB;color:#C0392B;} .xl-res .up{background:var(--tint);color:var(--steel);}
+  .xl-table{font-size:12px;} .xl-table td{padding:6px 6px;}
+  .xl-table tr.err td{background:#FDF1EF;}
+  .xl-msg{color:#C0392B;font-size:11px;}
+  .xl-warn{font-size:12px;color:var(--naranja);font-weight:600;margin:6px 0 10px;}
   .empty-state{text-align:center;padding:36px 16px;color:var(--ink-soft);font-size:13px;background:var(--card);border:1px dashed var(--line);border-radius:14px;}
   .loading{text-align:center;padding:60px 20px;color:var(--ink-soft);font-size:13px;}
   .toggle-link{font-size:12px;color:var(--steel);cursor:pointer;background:none;border:none;font-family:inherit;padding:0;margin-top:10px;display:inline-block;}
@@ -267,6 +280,8 @@ let turnosSemanaAdmin = null;      // lunes de la semana que se está editando
 let turnosDraft = null;            // {semana, filas:{codigo:{hora_inicio,hora_fin,dias:[],nota}}, dirty}
 let nuevaPub = { titulo:'', texto:'', enlace:'', imagen:null, fijado:false };
 const IMG_CACHE = {};
+let xlTrab = null;    // vista previa de carga de trabajadores {filas:[...], errores, nuevos, actualizados}
+let xlTurnos = null;  // vista previa de carga de turnos {semanaArchivo, filas:[...], validas, errores}
 
 function todayStr(){
   const d = new Date();
@@ -324,6 +339,7 @@ function limpiarDatos(){
   WORKER_CRED = null; workerTab = 'estado'; turnoSemanaTrab = 0;
   turnosDraft = null; turnosSemanaAdmin = null;
   nuevaPub = { titulo:'', texto:'', enlace:'', imagen:null, fijado:false };
+  xlTrab = null; xlTurnos = null;
   Object.keys(IMG_CACHE).forEach(k=>delete IMG_CACHE[k]);
 }
 function cargarDatos(d){
@@ -744,6 +760,12 @@ function renderTrabajadoresAdmin(){
       <input type="number" id="inpNuevoMonto" placeholder="Monto base bono" style="flex:1;">
     </div>
     <button class="secondary" id="btnAgregarTrab">+ Agregar trabajador</button>
+    <div class="xl-bar" style="margin-top:14px;">
+      <button class="xl-btn" id="btnXlTrabPlantilla">⬇ Descargar plantilla Excel</button>
+      <label class="xl-btn verde" for="inpXlTrab">⬆ Cargar Excel</label>
+      <input type="file" id="inpXlTrab" accept=".xlsx,.xls,.csv" style="display:none;">
+    </div>
+    ${renderXlTrab()}
     <table style="margin-top:16px;">
       <thead><tr><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto base bono</th><th></th></tr></thead>
       <tbody>${filasActivos || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
@@ -961,9 +983,15 @@ function renderTurnosAdmin(){
     <button class="secondary" id="btnCopiarSemana">Copiar semana anterior</button>
     ${esActual?'':'<button class="secondary" id="btnSemHoy">Ir a esta semana</button>'}
   </div>
+  ${trabActivos.length?`<div class="xl-bar">
+    <button class="xl-btn" id="btnXlTurPlantilla">⬇ Descargar plantilla Excel</button>
+    <label class="xl-btn verde" for="inpXlTur">⬆ Cargar Excel</label>
+    <input type="file" id="inpXlTur" accept=".xlsx,.xls,.csv" style="display:none;">
+  </div>`:''}
+  ${renderXlTurnos()}
   <div class="small-note" style="margin:0 0 12px;">${programados} de ${trabActivos.length} personas programadas. Marca los días de cada persona y su horario. Quien no tenga días marcados queda libre esa semana.</div>
   ${trabActivos.length ? filas : '<div class="empty-state">Primero agrega trabajadores en la pestaña "Trabajadores".</div>'}
-  ${trabActivos.length ? `<div class="sticky-save">
+  ${trabActivos.length && !xlTurnos ? `<div class="sticky-save">
     <button class="primary" id="btnGuardarTurnos">${turnosDraft.dirty?'Guardar y publicar semana':'Semana guardada ✓'}</button>
   </div>
   ${turnosDraft.dirty?'<div class="dirty-note" style="text-align:center;margin-top:8px;">Hay cambios sin guardar</div>':''}` : ''}
@@ -1023,6 +1051,207 @@ function renderQR(){
 }
 
 /* ---------- HANDLERS ---------- */
+/* ---------- EXCEL (plantillas y carga) ---------- */
+let _xlsxPromise = null;
+function cargarXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(!_xlsxPromise) _xlsxPromise = new Promise((res, rej)=>{
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = ()=> res(window.XLSX);
+    sc.onerror = ()=>{ _xlsxPromise = null; rej(new Error('No se pudo cargar el lector de Excel. Revisa la conexión.')); };
+    document.head.appendChild(sc);
+  });
+  return _xlsxPromise;
+}
+function xlNorm(t){ return String(t==null?'':t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }
+function xlTexto(v){ return v==null ? '' : String(v).trim(); }
+// Hora: acepta "06:00", "6:00", "6 am", "2:30 p. m.", "14", o número de Excel (fracción del día)
+function xlHora(v){
+  if(v===null || v===undefined || v==='') return {ok:true, val:''};
+  if(typeof v==='number'){
+    const frac = v % 1; const mins = Math.round(frac*1440) % 1440;
+    if(v>=1 && Number.isInteger(v) && v<=24){ return {ok:true, val:String(v%24).padStart(2,'0')+':00'}; }
+    return {ok:true, val:String(Math.floor(mins/60)).padStart(2,'0')+':'+String(mins%60).padStart(2,'0')};
+  }
+  const t = xlNorm(v).replace(/\./g,'').replace(/\s+/g,' ');
+  const m = t.match(/^(\d{1,2})(?:[:h](\d{2}))?(?::\d{2})?\s*(am|pm|a m|p m)?$/);
+  if(!m) return {ok:false};
+  let h = parseInt(m[1],10); const mi = m[2] ? parseInt(m[2],10) : 0; const ap = m[3] ? m[3].replace(' ','') : '';
+  if(mi>59) return {ok:false};
+  if(ap){ if(h<1||h>12) return {ok:false}; if(ap==='pm' && h<12) h+=12; if(ap==='am' && h===12) h=0; }
+  if(h>23) return {ok:false};
+  return {ok:true, val:String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0')};
+}
+function xlMarcado(v){ const t = xlNorm(v); return t!=='' && !['0','no','n','-','libre'].includes(t); }
+function xlMonto(v){
+  if(v===null || v===undefined || v==='') return {ok:true, val:null};
+  if(typeof v==='number') return {ok:v>=0, val:Math.round(v)};
+  const d = String(v).replace(/[^0-9]/g,''); if(!d) return {ok:false};
+  return {ok:true, val:parseInt(d,10)};
+}
+// Busca el código tal cual; si Excel le quitó los ceros (7 en vez de 0007), lo empareja
+function xlCodigo(v, existentes){
+  const c = xlTexto(v); if(!c) return '';
+  if(existentes.some(t=>t.codigo===c)) return c;
+  if(/^\d+$/.test(c)){ const m = existentes.find(t=>/^\d+$/.test(t.codigo) && Number(t.codigo)===Number(c)); if(m) return m.codigo; }
+  return c;
+}
+// Lee la primera hoja y devuelve las filas como objetos según la fila de encabezados
+async function xlLeer(file, encabezadoClave){
+  const XLSX = await cargarXLSX();
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+  const hi = aoa.findIndex(r=>r.some(c=>xlNorm(c)===encabezadoClave));
+  if(hi<0) throw new Error('No encontré la columna "'+encabezadoClave+'". Usa la plantilla descargada.');
+  const head = aoa[hi].map(xlNorm);
+  const filas = aoa.slice(hi+1).map((r,i)=>({_fila: hi+2+i, ...Object.fromEntries(head.map((h,j)=>[h, r[j]]))}))
+    .filter(o=>Object.entries(o).some(([k,v])=>k!=='_fila' && xlTexto(v)!==''));
+  let meta = {};
+  const info = wb.Sheets['Info'];
+  if(info){ XLSX.utils.sheet_to_json(info,{header:1,raw:false,defval:''}).forEach(r=>{ if(r[0]) meta[xlNorm(r[0])] = r[1]; }); }
+  return {filas, meta};
+}
+async function xlDescargar(nombre, encabezados, datos, anchos, info){
+  const XLSX = await cargarXLSX();
+  const ws = XLSX.utils.aoa_to_sheet([encabezados, ...datos]);
+  ws['!cols'] = anchos.map(w=>({wch:w}));
+  // Códigos y claves como texto (conserva ceros a la izquierda)
+  Object.keys(ws).forEach(k=>{ if(k[0]!=='!' && ws[k].t==='s'){ ws[k].z='@'; } });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+  if(info){ const wi = XLSX.utils.aoa_to_sheet(info); wi['!cols']=[{wch:22},{wch:90}]; XLSX.utils.book_append_sheet(wb, wi, 'Info'); }
+  XLSX.writeFile(wb, nombre);
+}
+function slugEmpresa(){ return String(window.EMPRESA.nombre||'empresa').replace(/[^A-Za-z0-9]+/g,'_'); }
+
+/* --- Trabajadores --- */
+async function plantillaTrabajadores(){
+  const filas = DATA.trabajadores.filter(t=>t.activo!==false).map(t=>[t.codigo, t.nombre, t.clave||'', Number(t.monto_base)||0]);
+  if(!filas.length) filas.push(['0001','Ejemplo: Juan Pérez','1234',200000]);
+  await xlDescargar(`Trabajadores_${slugEmpresa()}.xlsx`, ['Código','Nombre','Clave','Monto base bono'], filas, [12,34,12,18], [
+    ['Empresa', window.EMPRESA.nombre],
+    ['Instrucciones','Una fila por trabajador. Código y Nombre son obligatorios.'],
+    ['Clave','Obligatoria para trabajadores nuevos. Si dejas vacía la de alguien que ya existe, conserva su clave actual.'],
+    ['Monto base bono','Valor del bono por QUINCENA al 100%. Vacío = conserva el actual (o 0 si es nuevo).'],
+    ['Ceros a la izquierda','Si un código o clave empieza en 0, escríbelo con apóstrofe: \'0123'],
+    ['Importante','Quien ya existe se actualiza; quien no está en el archivo NO se borra.']
+  ]);
+}
+async function analizarTrabajadores(file){
+  const {filas} = await xlLeer(file, 'codigo');
+  const existentes = DATA.trabajadores;
+  const vistos = {}; let nuevos=0, actualizados=0, errores=0;
+  const res = filas.map(f=>{
+    const codigo = xlCodigo(f['codigo'], existentes);
+    const nombre = xlTexto(f['nombre']);
+    const clave = xlTexto(f['clave']);
+    const m = xlMonto(f['monto base bono'] ?? f['monto base'] ?? f['monto']);
+    const errs = [];
+    if(!codigo) errs.push('Falta código');
+    if(!nombre) errs.push('Falta nombre');
+    if(!m.ok) errs.push('Monto no válido');
+    const existe = existentes.find(t=>t.codigo===codigo);
+    if(!existe && !clave) errs.push('Es nuevo y no tiene clave');
+    if(codigo && vistos[codigo]) errs.push('Código repetido (fila '+vistos[codigo]+')');
+    if(codigo) vistos[codigo] = vistos[codigo] || f._fila;
+    const estado = errs.length ? 'error' : (existe ? 'actualizar' : 'nuevo');
+    if(estado==='error') errores++; else if(estado==='nuevo') nuevos++; else actualizados++;
+    return {fila:f._fila, codigo, nombre, clave, monto_base:m.val, estado, errs};
+  });
+  return {filas:res, nuevos, actualizados, errores};
+}
+function renderXlTrab(){
+  if(!xlTrab) return '';
+  const x = xlTrab;
+  const badge = e=> e==='nuevo' ? '<span style="color:#2F8F5B;font-weight:600;">Nuevo</span>' : e==='actualizar' ? '<span style="color:var(--steel);font-weight:600;">Actualizar</span>' : '<span style="color:#C0392B;font-weight:600;">Error</span>';
+  return `
+  <div class="xl-panel">
+    <h4>Vista previa del Excel</h4>
+    <div class="xl-res"><span class="ok">${x.nuevos} nuevos</span><span class="up">${x.actualizados} a actualizar</span>${x.errores?`<span class="er">${x.errores} con error</span>`:''}</div>
+    ${x.errores?'<div class="xl-warn">Corrige las filas en rojo en el Excel y vuelve a cargarlo. No se guarda nada hasta que no haya errores.</div>':''}
+    <div style="max-height:320px;overflow:auto;">
+    <table class="xl-table"><thead><tr><th>Fila</th><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto</th><th>Estado</th></tr></thead><tbody>
+      ${x.filas.map(f=>`<tr class="${f.estado==='error'?'err':''}"><td class="mono">${f.fila}</td><td class="mono">${esc(f.codigo)}</td><td>${esc(f.nombre)}</td><td class="mono">${f.clave?'••••':(f.estado==='actualizar'?'(igual)':'')}</td><td class="mono">${f.monto_base==null?(f.estado==='nuevo'?formatCOP(0):'(igual)'):formatCOP(f.monto_base)}</td><td>${badge(f.estado)}${f.errs.length?`<div class="xl-msg">${esc(f.errs.join(' · '))}</div>`:''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="row-flex" style="margin-top:12px;">
+      <button class="primary" id="btnXlTrabOk" style="width:auto;padding:11px 18px;" ${x.errores||!(x.nuevos+x.actualizados)?'disabled':''}>Guardar ${x.nuevos+x.actualizados} trabajadores</button>
+      <button class="secondary" id="btnXlTrabCancel">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+/* --- Turnos --- */
+async function plantillaTurnos(){
+  asegurarDraft();
+  const trab = DATA.trabajadores.filter(t=>t.activo!==false);
+  const filas = trab.map(t=>{
+    const f = turnosDraft.filas[t.codigo] || {hora_inicio:'',hora_fin:'',dias:[],nota:''};
+    return [t.codigo, t.nombre, f.hora_inicio||'', f.hora_fin||'', ...[1,2,3,4,5,6,7].map(d=>f.dias.includes(d)?'X':''), f.nota||''];
+  });
+  await xlDescargar(`Turnos_${slugEmpresa()}_${turnosSemanaAdmin}.xlsx`,
+    ['Código','Nombre','Hora inicio','Hora fin','L','M','X','J','V','S','D','Nota'], filas,
+    [10,30,12,12,4,4,4,4,4,4,4,30], [
+      ['Empresa', window.EMPRESA.nombre],
+      ['Semana', turnosSemanaAdmin],
+      ['Semana (texto)', semanaLabel(turnosSemanaAdmin)],
+      ['Horas','Formato 24 h (06:00, 14:00, 22:00) o con am/pm (6:00 am, 2:00 pm).'],
+      ['Días','Escribe X en cada día que trabaja. Vacío = no trabaja ese día.'],
+      ['Sin turno','Si una persona no trabaja esa semana, deja todos los días vacíos.'],
+      ['Importante','Al cargar, la semana completa se reemplaza por lo que diga el archivo.']
+    ]);
+}
+async function analizarTurnos(file){
+  const {filas, meta} = await xlLeer(file, 'codigo');
+  const trab = DATA.trabajadores.filter(t=>t.activo!==false);
+  const claves = ['l','m','x','j','v','s','d'];
+  const vistos = {}; let validas=0, errores=0, libres=0;
+  const res = filas.map(f=>{
+    const codigo = xlCodigo(f['codigo'], trab);
+    const t = trab.find(x=>x.codigo===codigo);
+    const hi = xlHora(f['hora inicio']); const hf = xlHora(f['hora fin']);
+    const dias = claves.map((k,i)=> xlMarcado(f[k]) ? i+1 : 0).filter(Boolean);
+    const errs = [];
+    if(!codigo) errs.push('Falta código');
+    else if(!t) errs.push('Código no existe o está inactivo');
+    if(!hi.ok) errs.push('Hora inicio no válida');
+    if(!hf.ok) errs.push('Hora fin no válida');
+    if(dias.length && hi.ok && hf.ok && (!hi.val || !hf.val)) errs.push('Falta hora (verá "por confirmar")');
+    if(codigo && vistos[codigo]) errs.push('Persona repetida (fila '+vistos[codigo]+')');
+    if(codigo) vistos[codigo] = vistos[codigo] || f._fila;
+    const grave = errs.filter(e=>!e.startsWith('Falta hora')).length>0;
+    if(grave) errores++; else if(dias.length) validas++; else libres++;
+    return {fila:f._fila, codigo, nombre: t?t.nombre:xlTexto(f['nombre']), hora_inicio:hi.val||'', hora_fin:hf.val||'', dias, nota:xlTexto(f['nota']), grave, errs};
+  });
+  const semanaArchivo = meta['semana'] ? String(meta['semana']).slice(0,10) : null;
+  const ausentes = trab.filter(t=>!res.some(r=>r.codigo===t.codigo)).length;
+  return {filas:res, validas, errores, libres, ausentes, semanaArchivo};
+}
+function renderXlTurnos(){
+  if(!xlTurnos) return '';
+  const x = xlTurnos;
+  const otraSemana = x.semanaArchivo && x.semanaArchivo!==turnosSemanaAdmin;
+  return `
+  <div class="xl-panel">
+    <h4>Vista previa del Excel — semana ${semanaLabel(turnosSemanaAdmin)}</h4>
+    <div class="xl-res"><span class="ok">${x.validas} con turno</span><span>${x.libres} libres</span>${x.errores?`<span class="er">${x.errores} con error</span>`:''}</div>
+    ${otraSemana?`<div class="xl-warn">Ojo: este archivo se descargó para la semana ${semanaLabel(x.semanaArchivo)}. Se aplicará a la semana que tienes abierta (${semanaLabel(turnosSemanaAdmin)}).</div>`:''}
+    ${x.ausentes?`<div class="xl-warn">${x.ausentes} trabajador(es) activos no están en el archivo: quedarán libres esta semana.</div>`:''}
+    ${x.errores?'<div class="xl-warn">Corrige las filas en rojo en el Excel y vuelve a cargarlo.</div>':''}
+    <div style="max-height:320px;overflow:auto;">
+    <table class="xl-table"><thead><tr><th>Fila</th><th>Nombre</th><th>Horario</th><th>Días</th><th></th></tr></thead><tbody>
+      ${x.filas.map(f=>`<tr class="${f.grave?'err':''}"><td class="mono">${f.fila}</td><td>${esc(f.nombre||f.codigo)}</td><td class="mono">${f.dias.length?esc(horarioTxt(f)):'—'}</td><td class="mono">${f.dias.length?f.dias.map(d=>DIAS_CORTO[d-1]).join(' '):'Libre'}</td><td>${f.errs.length?`<div class="xl-msg" style="${f.grave?'':'color:var(--naranja)'}">${esc(f.errs.join(' · '))}</div>`:''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="row-flex" style="margin-top:12px;">
+      <button class="primary" id="btnXlTurOk" style="width:auto;padding:11px 18px;" ${x.errores?'disabled':''}>Pasar a la semana</button>
+      <button class="secondary" id="btnXlTurCancel">Cancelar</button>
+    </div>
+    <div class="small-note">Después de pasarlo revisa abajo y pulsa "Guardar y publicar semana".</div>
+  </div>`;
+}
+
 function confirmarSalir(){ return window.confirm('Tienes cambios de turnos sin guardar. ¿Salir sin guardar?'); }
 function attachHandlers(){
   document.getElementById('btnToggleAdmin').onclick = ()=>{
@@ -1176,6 +1405,24 @@ function attachHandlers(){
           await fetchAll(); render();
         };
       });
+      document.getElementById('btnXlTrabPlantilla').onclick = async ()=>{
+        try{ await plantillaTrabajadores(); }catch(e){ showToast(e.message); }
+      };
+      document.getElementById('inpXlTrab').onchange = async (e)=>{
+        const file = e.target.files && e.target.files[0]; e.target.value=''; if(!file) return;
+        try{ showToast('Leyendo Excel…'); xlTrab = await analizarTrabajadores(file); if(!xlTrab.filas.length) { xlTrab=null; showToast('El archivo no tiene filas.'); } render(); }
+        catch(err){ xlTrab=null; showToast(err.message); }
+      };
+      const xo = document.getElementById('btnXlTrabOk');
+      if(xo) xo.onclick = async ()=>{
+        const filas = xlTrab.filas.filter(f=>f.estado!=='error').map(f=>({codigo:f.codigo, nombre:f.nombre, clave:f.clave, monto_base:f.monto_base}));
+        xo.disabled = true; xo.textContent = 'Guardando…';
+        const {data, error} = await sb.rpc('indicador_importar_trabajadores', {p_empresa: empresaId(), p_pin: SESION_PIN, p_filas: filas});
+        if(error){ xo.disabled=false; xo.textContent='Reintentar'; showToast('No se guardó nada: '+error.message); return; }
+        xlTrab = null; await fetchAll();
+        showToast(`Listo: ${data.nuevos} nuevos y ${data.actualizados} actualizados.`); render();
+      };
+      const xc = document.getElementById('btnXlTrabCancel'); if(xc) xc.onclick = ()=>{ xlTrab = null; render(); };
       const toggleBtn = document.getElementById('btnToggleInactivosTrab');
       if(toggleBtn) toggleBtn.onclick = ()=>{ mostrarInactivosTrab = !mostrarInactivosTrab; render(); };
     }
@@ -1344,7 +1591,7 @@ function attachHandlers(){
     if(adminTab==='turnos' && document.getElementById('btnSemPrev')){
       const cambiarSemana = (nueva)=>{
         if(turnosDraft && turnosDraft.dirty && !confirmarSalir()) return;
-        turnosSemanaAdmin = nueva; turnosDraft = null; render();
+        turnosSemanaAdmin = nueva; turnosDraft = null; xlTurnos = null; render();
       };
       document.getElementById('btnSemPrev').onclick = ()=> cambiarSemana(sumarDias(turnosSemanaAdmin,-7));
       document.getElementById('btnSemNext').onclick = ()=> cambiarSemana(sumarDias(turnosSemanaAdmin,7));
@@ -1360,6 +1607,22 @@ function attachHandlers(){
       document.querySelectorAll('[data-t-lv]').forEach(b=>{ b.onclick = ()=>{ filaDraft(b.dataset.tLv).dias = [1,2,3,4,5]; marcar(); render(); }; });
       document.querySelectorAll('[data-t-ls]').forEach(b=>{ b.onclick = ()=>{ filaDraft(b.dataset.tLs).dias = [1,2,3,4,5,6]; marcar(); render(); }; });
       document.querySelectorAll('[data-t-clear]').forEach(b=>{ b.onclick = ()=>{ filaDraft(b.dataset.tClear).dias = []; marcar(); render(); }; });
+      const bxp = document.getElementById('btnXlTurPlantilla');
+      if(bxp) bxp.onclick = async ()=>{ try{ await plantillaTurnos(); }catch(e){ showToast(e.message); } };
+      const ixt = document.getElementById('inpXlTur');
+      if(ixt) ixt.onchange = async (e)=>{
+        const file = e.target.files && e.target.files[0]; e.target.value=''; if(!file) return;
+        try{ showToast('Leyendo Excel…'); xlTurnos = await analizarTurnos(file); if(!xlTurnos.filas.length){ xlTurnos=null; showToast('El archivo no tiene filas.'); } render(); }
+        catch(err){ xlTurnos=null; showToast(err.message); }
+      };
+      const bxo = document.getElementById('btnXlTurOk');
+      if(bxo) bxo.onclick = ()=>{
+        const filas = {};
+        xlTurnos.filas.filter(f=>!f.grave && f.dias.length).forEach(f=>{ filas[f.codigo] = {hora_inicio:f.hora_inicio, hora_fin:f.hora_fin, dias:f.dias, nota:f.nota}; });
+        turnosDraft = {semana: turnosSemanaAdmin, filas, dirty:true}; xlTurnos = null;
+        showToast('Turnos cargados. Revisa y pulsa "Guardar y publicar semana".'); render();
+      };
+      const bxc = document.getElementById('btnXlTurCancel'); if(bxc) bxc.onclick = ()=>{ xlTurnos = null; render(); };
       document.getElementById('btnCopiarSemana').onclick = ()=>{
         const ant = sumarDias(turnosSemanaAdmin,-7);
         const previos = DATA.turnos.filter(t=>t.semana===ant);
