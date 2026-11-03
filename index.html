@@ -176,6 +176,15 @@
   .file-btn{display:inline-block;padding:10px 14px;border:1px dashed var(--line);border-radius:9px;cursor:pointer;font-size:13px;color:var(--steel);font-weight:600;}
   .chk-inline{display:flex;align-items:center;gap:8px;font-size:13px;margin:10px 0 14px;color:var(--ink);}
   .chk-inline input{width:auto;}
+  .grp-chip{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:999px;background:var(--tint);color:var(--steel);margin-left:6px;vertical-align:middle;}
+  .grp-head{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--steel);margin:16px 0 8px;display:flex;justify-content:space-between;align-items:center;}
+  .grp-card{border:1px dashed var(--steel);border-radius:12px;padding:14px;margin:0 0 16px;background:var(--card);}
+  .grp-card h4{margin:0 0 10px;font-size:14px;}
+  .grp-sel{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .grp-sel button{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-family:inherit;font-weight:700;font-size:13px;color:var(--ink-soft);cursor:pointer;}
+  .grp-sel button.on{background:var(--steel);border-color:var(--steel);color:#fff;}
+  .xl-sem-row{cursor:pointer;}
+  .xl-sem-row:hover td{background:var(--tint);}
   .col-search{margin-bottom:12px;}
   .col-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--card);cursor:pointer;}
   .col-row:hover{border-color:var(--steel);}
@@ -305,6 +314,9 @@ let colabPeriodo = null;   // mes consultado en Colaboradores
 let colabCodigo = null;    // colaborador abierto en detalle
 let colabFiltro = '';      // búsqueda por nombre/código
 let editRegId = null;      // anotación en edición
+let grupoDraft = { grupo:'', hora_inicio:'', hora_fin:'', dias:[], nota:'' };  // programar por grupo
+let semanasPlantilla = 4;  // semanas en la plantilla por grupos
+let xlSemAbierta = null;   // semana desplegada en la vista previa
 let xlTrab = null;    // vista previa de carga de trabajadores {filas:[...], errores, nuevos, actualizados}
 let xlTurnos = null;  // vista previa de carga de turnos {semanaArchivo, filas:[...], validas, errores}
 
@@ -610,7 +622,7 @@ function renderTurnosTrab(){
   const hoy = todayStr();
   const miHtml = mio ? `
     <div class="mi-turno">
-      <div class="lbl">Tu turno</div>
+      <div class="lbl">Tu turno${mio.grupo?` · Grupo ${esc(mio.grupo)}`:''}</div>
       <div class="hrs">${esc(horarioTxt(mio))}</div>
       <div class="dia-pills">${DIAS_CORTO.map((d,i)=>`<span class="dia-pill ${mio.dias.includes(i+1)?'on':''}">${d}</span>`).join('')}</div>
       ${mio.nota ? `<div class="small-note">${esc(mio.nota)}</div>` : ''}
@@ -621,15 +633,15 @@ function renderTurnosTrab(){
     return `
     <div class="day-card ${fecha===hoy?'hoy':''}">
       <div class="day-head"><span class="day-name">${nombre}${fecha===hoy?'<span class="tag-hoy">Hoy</span>':''}</span><span class="day-date">${fechaCorta(fecha)}</span></div>
-      ${gente.length ? gente.map(t=>`<div class="shift-row ${t.trabajador_codigo===yo?'yo':''}"><span>${esc(t.nombre)}</span><span class="shift-hrs">${esc(horarioTxt(t))}</span></div>`).join('') : '<div class="small-note" style="margin:0;">Nadie programado.</div>'}
+      ${gente.length ? gente.map(t=>`<div class="shift-row ${t.trabajador_codigo===yo?'yo':''}"><span>${esc(t.nombre)}${t.grupo?`<span class="grp-chip">${esc(t.grupo)}</span>`:''}</span><span class="shift-hrs">${esc(horarioTxt(t))}</span></div>`).join('') : '<div class="small-note" style="margin:0;">Nadie programado.</div>'}
     </div>`;
   }).join('');
   return `
-    <div class="seg">
-      <button class="${turnoSemanaTrab===0?'active':''}" data-sem="0">Esta semana</button>
-      <button class="${turnoSemanaTrab===1?'active':''}" data-sem="1">Próxima semana</button>
+    <div class="week-nav">
+      <button class="wk-btn" data-sem="${turnoSemanaTrab-1}" ${turnoSemanaTrab<=0?'disabled style="opacity:.35;"':''}>‹</button>
+      <div class="wk-label">${turnoSemanaTrab===0?'Esta semana':turnoSemanaTrab===1?'Próxima semana':'En '+turnoSemanaTrab+' semanas'}<span class="wk-sub">${semanaLabel(lunes)}</span></div>
+      <button class="wk-btn" data-sem="${turnoSemanaTrab+1}" ${turnoSemanaTrab>=5?'disabled style="opacity:.35;"':''}>›</button>
     </div>
-    <div class="month-label" style="margin-bottom:14px;">${semanaLabel(lunes)}</div>
     ${turnos.length ? miHtml + dias : '<div class="empty-state">Los turnos de esta semana aún no están publicados.</div>'}`;
 }
 
@@ -771,6 +783,7 @@ function renderTrabajadoresAdmin(){
     <tr><td class="mono">${t.codigo}</td><td>${t.nombre}</td>
       <td><input type="text" class="mono num-small" style="width:90px;" data-clave="${t.codigo}" value="${t.clave||''}"></td>
       <td><input type="number" class="mono num-small" style="width:100px;" data-monto="${t.codigo}" value="${t.monto_base||0}" step="1000"></td>
+      <td><input type="text" class="mono num-small" style="width:56px;text-transform:uppercase;" data-grupo="${t.codigo}" value="${esc(grupoDe(t))}" maxlength="10"></td>
       <td><button class="del-btn" data-off-trab="${t.codigo}">${pendingChange && pendingChange.kind==='trab' && pendingChange.action==='off' && pendingChange.id===t.codigo ? '¿Confirmar?' : 'Desactivar'}</button></td>
     </tr>`).join('');
   const filasInactivos = inactivos.map(t=>`
@@ -785,6 +798,7 @@ function renderTrabajadoresAdmin(){
       <input type="text" id="inpNuevoNombre" placeholder="Nombre completo" style="flex:2;">
       <input type="text" id="inpNuevoClave" placeholder="Clave" style="flex:1;">
       <input type="number" id="inpNuevoMonto" placeholder="Monto base bono" style="flex:1;">
+      <input type="text" id="inpNuevoGrupo" placeholder="Grupo" maxlength="10" style="flex:0 0 80px;text-transform:uppercase;">
     </div>
     <button class="secondary" id="btnAgregarTrab">+ Agregar trabajador</button>
     <div class="xl-bar" style="margin-top:14px;">
@@ -794,8 +808,8 @@ function renderTrabajadoresAdmin(){
     </div>
     ${renderXlTrab()}
     <table style="margin-top:16px;">
-      <thead><tr><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto base bono</th><th></th></tr></thead>
-      <tbody>${filasActivos || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+      <thead><tr><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto base bono</th><th>Grupo</th><th></th></tr></thead>
+      <tbody>${filasActivos || '<tr><td colspan="6" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
     </table>
     <button class="toggle-link" id="btnToggleInactivosTrab">${mostrarInactivosTrab?'Ocultar':'Mostrar'} inactivos (${inactivos.length})</button>
     ${mostrarInactivosTrab ? `<table style="margin-top:10px;"><tbody>${filasInactivos || '<tr><td class="small-note">Ninguno.</td></tr>'}</tbody></table>` : ''}
@@ -907,7 +921,7 @@ function renderResumen(){
     <div class="section-title" style="margin-top:24px;">Por trabajador</div>
     <table>
       <thead><tr><th>Nombre</th><th>Código</th><th></th><th>Score</th><th>Nivel</th></tr></thead>
-      <tbody>${filasTabla || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+      <tbody>${filasTabla || '<tr><td colspan="6" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
     </table>
     <button class="secondary" style="margin-top:14px;" id="btnCopiarResumen">Copiar resumen para WhatsApp</button>
 
@@ -951,12 +965,21 @@ function renderBonificacion(){
     <div class="field-group"><label>Quincena</label><select id="selPeriodoBono">${opcionesPeriodo}</select></div>
     <table>
       <thead><tr><th>Código</th><th>Nombre</th><th>%</th><th>Monto base</th><th>Bonificación</th></tr></thead>
-      <tbody>${filas.map(f=>`<tr><td class="mono">${f.codigo}</td><td>${f.nombre}</td><td class="mono">${f.pct}%</td><td class="mono">${formatCOP(f.montoBase)}</td><td class="mono">${formatCOP(f.valor)}</td></tr>`).join('') || '<tr><td colspan="5" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
+      <tbody>${filas.map(f=>`<tr><td class="mono">${f.codigo}</td><td>${f.nombre}</td><td class="mono">${f.pct}%</td><td class="mono">${formatCOP(f.montoBase)}</td><td class="mono">${formatCOP(f.valor)}</td></tr>`).join('') || '<tr><td colspan="6" class="small-note">Sin trabajadores activos.</td></tr>'}</tbody>
       ${filas.length ? `<tfoot><tr><td colspan="4" style="font-weight:600;">Total a pagar</td><td class="mono" style="font-weight:600;">${formatCOP(totalBono)}</td></tr></tfoot>` : ''}
     </table>
     <button class="secondary" style="margin-top:14px;" id="btnGenerarPdfBono">Generar PDF / Imprimir</button>
     <div class="small-note">El monto base de cada quien se edita en la pestaña Trabajadores. El valor pagado es proporcional a su % de cumplimiento ponderado de esta quincena.</div>
   </div>`;
+}
+
+/* ---------- GRUPOS ---------- */
+function grupoDe(t){ return t && t.grupo ? String(t.grupo).trim().toUpperCase() : ''; }
+function gruposExistentes(){
+  return [...new Set(DATA.trabajadores.filter(t=>t.activo!==false).map(grupoDe).filter(Boolean))].sort();
+}
+function ordenarPorGrupo(lista){
+  return [...lista].sort((a,b)=>{ const ga=grupoDe(a), gb=grupoDe(b); if(!ga!==!gb) return ga?-1:1; return ga.localeCompare(gb) || a.nombre.localeCompare(b.nombre); });
 }
 
 /* ---------- COLABORADORES (líder y admin) ---------- */
@@ -1063,6 +1086,29 @@ function filaDraft(codigo){
   if(!turnosDraft.filas[codigo]) turnosDraft.filas[codigo] = {hora_inicio:'', hora_fin:'', dias:[], nota:''};
   return turnosDraft.filas[codigo];
 }
+function renderProgramarGrupo(presets){
+  const grupos = gruposExistentes();
+  if(!grupos.length) return '';
+  if(!grupos.includes(grupoDraft.grupo)) grupoDraft.grupo = grupos[0];
+  const g = grupoDraft.grupo;
+  const miembros = DATA.trabajadores.filter(t=>t.activo!==false && grupoDe(t)===g).length;
+  return `
+  <div class="grp-card">
+    <h4>Programar por grupo (semana ${semanaLabel(turnosSemanaAdmin)})</h4>
+    <div class="grp-sel">${grupos.map(x=>`<button class="${x===g?'on':''}" data-gsel="${esc(x)}">Grupo ${esc(x)}</button>`).join('')}</div>
+    <div class="te-hrs" style="margin-bottom:8px;"><input type="time" id="gIni" value="${grupoDraft.hora_inicio}"> – <input type="time" id="gFin" value="${grupoDraft.hora_fin}"></div>
+    <div class="preset-row" style="margin-bottom:8px;">${presets.map(([a,b])=>`<button data-gpreset data-a="${a}" data-b="${b}">${fmtHora(a)} – ${fmtHora(b)}</button>`).join('')}</div>
+    <div class="day-toggles">${DIAS_CORTO.map((d,i)=>`<button class="day-toggle ${grupoDraft.dias.includes(i+1)?'on':''}" data-gdia="${i+1}" title="${DIAS_LARGO[i]}">${d}</button>`).join('')}
+      <button class="day-toggle" data-gdias="12345" style="min-width:52px;">L–V</button>
+      <button class="day-toggle" data-gdias="123456" style="min-width:52px;">L–S</button>
+      <button class="day-toggle" data-gdias="" style="min-width:52px;">Libre</button>
+    </div>
+    <div class="te-nota"><input type="text" id="gNota" value="${esc(grupoDraft.nota)}" placeholder="Nota para el grupo (opcional)"></div>
+    <button class="secondary" id="btnAplicarGrupo" style="margin-top:10px;">Aplicar a ${miembros} persona(s) del grupo ${esc(g)}</button>
+    <div class="small-note">Luego ajusta a mano si alguien es excepción y pulsa "Guardar y publicar semana".</div>
+  </div>`;
+}
+
 function renderTurnosAdmin(){
   asegurarDraft();
   const lunes = turnosSemanaAdmin;
@@ -1070,9 +1116,13 @@ function renderTurnosAdmin(){
   const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
   const programados = trabActivos.filter(t=>(turnosDraft.filas[t.codigo]||{dias:[]}).dias.length>0).length;
   const presets = [['06:00','14:00'],['14:00','22:00'],['22:00','06:00'],['07:00','17:00']];
-  const filas = trabActivos.map(t=>{
+  let grpPrevio = null;
+  const filas = ordenarPorGrupo(trabActivos).map(t=>{
     const f = turnosDraft.filas[t.codigo] || {hora_inicio:'',hora_fin:'',dias:[],nota:''};
-    return `
+    const g = grupoDe(t);
+    let cab = '';
+    if(gruposExistentes().length && g!==grpPrevio){ grpPrevio = g; const nG = trabActivos.filter(x=>grupoDe(x)===g).length; cab = `<div class="grp-head"><span>${g?'Grupo '+esc(g):'Sin grupo'}</span><span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-soft);">${nG} persona(s)</span></div>`; }
+    return cab + `
     <div class="turno-edit ${f.dias.length?'on':''}">
       <div class="te-head">
         <span class="te-name">${esc(t.nombre)} <span class="mono" style="color:var(--ink-soft);font-size:11px;">${esc(t.codigo)}</span></span>
@@ -1098,23 +1148,30 @@ function renderTurnosAdmin(){
     <button class="secondary" id="btnCopiarSemana">Copiar semana anterior</button>
     ${esActual?'':'<button class="secondary" id="btnSemHoy">Ir a esta semana</button>'}
   </div>
-  ${trabActivos.length?`<div class="xl-bar">
-    <button class="xl-btn" id="btnXlTurPlantilla">⬇ Descargar plantilla Excel</button>
-    <label class="xl-btn verde" for="inpXlTur">⬆ Cargar Excel</label>
-    <input type="file" id="inpXlTur" accept=".xlsx,.xls,.csv" style="display:none;">
+  ${trabActivos.length?`<div class="card" style="margin-bottom:14px;padding:16px;">
+    <div style="font-weight:700;font-size:14px;margin-bottom:8px;">Cargar por Excel</div>
+    <div class="xl-bar" style="margin-bottom:8px;">
+      <button class="xl-btn" id="btnXlTurPlantillaGrupos">⬇ Plantilla por grupos</button>
+      <select id="selSemanasPlantilla" style="width:auto;padding:8px 10px;font-size:13px;">${[1,2,3,4,5,6,8].map(k=>`<option value="${k}" ${k===semanasPlantilla?'selected':''}>${k} semana${k>1?'s':''}</option>`).join('')}</select>
+      <button class="xl-btn" id="btnXlTurPlantilla">⬇ Plantilla por persona</button>
+      <label class="xl-btn verde" for="inpXlTur">⬆ Cargar Excel</label>
+      <input type="file" id="inpXlTur" accept=".xlsx,.xls" style="display:none;">
+    </div>
+    <div class="small-note" style="margin:0;"><b>Por grupos:</b> una fila por semana y grupo (horario y días); sirve para cargar el mes completo de una vez. <b>Por persona:</b> una fila por trabajador. Se aceptan archivos con una hoja por semana.</div>
   </div>`:`<div class="xl-bar">
     <button class="xl-btn" disabled style="opacity:.45;cursor:not-allowed;">⬇ Descargar plantilla Excel</button>
     <button class="xl-btn verde" disabled style="opacity:.45;cursor:not-allowed;">⬆ Cargar Excel</button>
   </div>
   <div class="xl-warn">Para programar turnos (a mano o por Excel) primero carga los trabajadores. <button class="toggle-link" id="btnIrTrabajadores" style="margin:0;">Ir a Trabajadores →</button></div>`}
   ${renderXlTurnos()}
+  ${!xlTurnos ? renderProgramarGrupo(presets) : ''}
   <div class="small-note" style="margin:0 0 12px;">${programados} de ${trabActivos.length} personas programadas. Marca los días de cada persona y su horario. Quien no tenga días marcados queda libre esa semana.</div>
   ${trabActivos.length ? filas : '<div class="empty-state">Primero agrega trabajadores en la pestaña "Trabajadores".</div>'}
   ${trabActivos.length && !xlTurnos ? `<div class="sticky-save">
     <button class="primary" id="btnGuardarTurnos">${turnosDraft.dirty?'Guardar y publicar semana':'Semana guardada ✓'}</button>
   </div>
   ${turnosDraft.dirty?'<div class="dirty-note" style="text-align:center;margin-top:8px;">Hay cambios sin guardar</div>':''}` : ''}
-  <div class="small-note">Los trabajadores ven la semana actual y la siguiente en su pestaña "Turnos".</div>`;
+  <div class="small-note">Los trabajadores ven su turno y el de sus compañeros desde esta semana hasta 5 semanas adelante.</div>`;
 }
 
 /* ---------- CARTELERA (admin) ---------- */
@@ -1248,9 +1305,10 @@ function slugEmpresa(){ return String(window.EMPRESA.nombre||'empresa').replace(
 
 /* --- Trabajadores --- */
 async function plantillaTrabajadores(){
-  const filas = DATA.trabajadores.filter(t=>t.activo!==false).map(t=>[t.codigo, t.nombre, t.clave||'', Number(t.monto_base)||0]);
-  if(!filas.length) filas.push(['0001','Ejemplo: Juan Pérez','1234',200000]);
-  await xlDescargar(`Trabajadores_${slugEmpresa()}.xlsx`, ['Código','Nombre','Clave','Monto base bono'], filas, [12,34,12,18], [
+  const filas = ordenarPorGrupo(DATA.trabajadores.filter(t=>t.activo!==false)).map(t=>[t.codigo, t.nombre, t.clave||'', Number(t.monto_base)||0, grupoDe(t)]);
+  if(!filas.length) filas.push(['0001','Ejemplo: Juan Pérez','1234',200000,'A']);
+  await xlDescargar(`Trabajadores_${slugEmpresa()}.xlsx`, ['Código','Nombre','Clave','Monto base bono','Grupo'], filas, [12,34,12,18,10], [
+    ['Grupo','Letra o nombre del grupo de trabajo (A, B, C...). Vacío = sin grupo.'],
     ['Empresa', window.EMPRESA.nombre],
     ['Instrucciones','Una fila por trabajador. Código y Nombre son obligatorios.'],
     ['Clave','Obligatoria para trabajadores nuevos. Si dejas vacía la de alguien que ya existe, conserva su clave actual.'],
@@ -1268,6 +1326,8 @@ async function analizarTrabajadores(file){
     const nombre = xlTexto(f['nombre']);
     const clave = xlTexto(f['clave']);
     const m = xlMonto(f['monto base bono'] ?? f['monto base'] ?? f['monto']);
+    const tieneGrupo = Object.prototype.hasOwnProperty.call(f,'grupo');
+    const grupo = tieneGrupo ? xlTexto(f['grupo']).toUpperCase() : undefined;
     const errs = [];
     if(!codigo) errs.push('Falta código');
     if(!nombre) errs.push('Falta nombre');
@@ -1278,7 +1338,7 @@ async function analizarTrabajadores(file){
     if(codigo) vistos[codigo] = vistos[codigo] || f._fila;
     const estado = errs.length ? 'error' : (existe ? 'actualizar' : 'nuevo');
     if(estado==='error') errores++; else if(estado==='nuevo') nuevos++; else actualizados++;
-    return {fila:f._fila, codigo, nombre, clave, monto_base:m.val, estado, errs};
+    return {fila:f._fila, codigo, nombre, clave, monto_base:m.val, grupo, estado, errs};
   });
   return {filas:res, nuevos, actualizados, errores};
 }
@@ -1292,8 +1352,8 @@ function renderXlTrab(){
     <div class="xl-res"><span class="ok">${x.nuevos} nuevos</span><span class="up">${x.actualizados} a actualizar</span>${x.errores?`<span class="er">${x.errores} con error</span>`:''}</div>
     ${x.errores?'<div class="xl-warn">Corrige las filas en rojo en el Excel y vuelve a cargarlo. No se guarda nada hasta que no haya errores.</div>':''}
     <div style="max-height:320px;overflow:auto;">
-    <table class="xl-table"><thead><tr><th>Fila</th><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto</th><th>Estado</th></tr></thead><tbody>
-      ${x.filas.map(f=>`<tr class="${f.estado==='error'?'err':''}"><td class="mono">${f.fila}</td><td class="mono">${esc(f.codigo)}</td><td>${esc(f.nombre)}</td><td class="mono">${f.clave?'••••':(f.estado==='actualizar'?'(igual)':'')}</td><td class="mono">${f.monto_base==null?(f.estado==='nuevo'?formatCOP(0):'(igual)'):formatCOP(f.monto_base)}</td><td>${badge(f.estado)}${f.errs.length?`<div class="xl-msg">${esc(f.errs.join(' · '))}</div>`:''}</td></tr>`).join('')}
+    <table class="xl-table"><thead><tr><th>Fila</th><th>Código</th><th>Nombre</th><th>Clave</th><th>Monto</th><th>Grupo</th><th>Estado</th></tr></thead><tbody>
+      ${x.filas.map(f=>`<tr class="${f.estado==='error'?'err':''}"><td class="mono">${f.fila}</td><td class="mono">${esc(f.codigo)}</td><td>${esc(f.nombre)}</td><td class="mono">${f.clave?'••••':(f.estado==='actualizar'?'(igual)':'')}</td><td class="mono">${f.monto_base==null?(f.estado==='nuevo'?formatCOP(0):'(igual)'):formatCOP(f.monto_base)}</td><td class="mono">${f.grupo===undefined?'(igual)':esc(f.grupo||'—')}</td><td>${badge(f.estado)}${f.errs.length?`<div class="xl-msg">${esc(f.errs.join(' · '))}</div>`:''}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="row-flex" style="margin-top:12px;">
       <button class="primary" id="btnXlTrabOk" style="width:auto;padding:11px 18px;" ${x.errores||!(x.nuevos+x.actualizados)?'disabled':''}>Guardar ${x.nuevos+x.actualizados} trabajadores</button>
@@ -1303,71 +1363,207 @@ function renderXlTrab(){
 }
 
 /* --- Turnos --- */
+const MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+// Fecha desde Excel: número de serie, "2026-11-02", "02/11/2026", "2/11/26"
+function xlFecha(v){
+  if(v===null || v===undefined || v==='') return null;
+  if(typeof v==='number'){ const d = new Date(Math.round((v-25569)*86400000)); return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
+  const t = String(v).trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/); if(m){ const y = m[3].length===2 ? '20'+m[3] : m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  return null;
+}
+// Semana desde el nombre de una hoja: "09-15 nov", "30 nov"
+function semanaDeTitulo(titulo, anioRef){
+  const m = xlNorm(titulo).match(/(\d{1,2})\s*(?:[-–]\s*\d{1,2})?\s*(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)/);
+  if(!m) return null;
+  const iso = `${anioRef}-${String(MESES_ABR.indexOf(m[2])+1).padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return lunesDe(iso);
+}
+async function xlLeerLibro(file){
+  const XLSX = await cargarXLSX();
+  const wb = XLSX.read(await file.arrayBuffer(), {type:'array'});
+  return wb.SheetNames.map(nombre=>({nombre, aoa: XLSX.utils.sheet_to_json(wb.Sheets[nombre], {header:1, raw:true, defval:''})}));
+}
+function xlTabla(aoa, debeTener){
+  const hi = aoa.findIndex(r=>{ const h = r.map(xlNorm); return debeTener.every(k=>h.includes(k)); });
+  if(hi<0) return null;
+  const head = aoa[hi].map(xlNorm);
+  return aoa.slice(hi+1).map((r,k)=>({_fila: hi+2+k, ...Object.fromEntries(head.map((h,c)=>[h, r[c]]))}))
+    .filter(o=>Object.entries(o).some(([k,v])=>k!=='_fila' && xlTexto(v)!==''));
+}
+function xlInfoSemana(aoa){
+  const r = aoa.find(r=>xlNorm(r[0])==='semana'); return r ? xlFecha(r[1]) : null;
+}
+const DIAS_KEYS = ['l','m','x','j','v','s','d'];
+
+async function plantillaTurnosGrupos(){
+  asegurarDraft();
+  const grupos = gruposExistentes();
+  if(!grupos.length){ showToast('Primero asigna grupos a los trabajadores (pestaña Trabajadores).'); return; }
+  const trab = DATA.trabajadores.filter(t=>t.activo!==false);
+  const filas = [];
+  for(let k=0;k<semanasPlantilla;k++){
+    const sem = sumarDias(turnosSemanaAdmin, 7*k);
+    grupos.forEach(g=>{
+      const miembros = trab.filter(t=>grupoDe(t)===g).map(t=>t.codigo);
+      const ts = DATA.turnos.filter(t=>t.semana===sem && miembros.includes(t.trabajador_codigo));
+      let fila = [sem, semanaLabel(sem), g, '', '', '', '', '', '', '', '', '', ''];
+      const firma = x=>[x.hora_inicio||'',x.hora_fin||'',(x.dias||[]).join(''),x.nota||''].join('|');
+      if(ts.length===miembros.length && ts.length && ts.every(x=>firma(x)===firma(ts[0]))){
+        const x = ts[0];
+        fila = [sem, semanaLabel(sem), g, x.hora_inicio||'', x.hora_fin||'', ...[1,2,3,4,5,6,7].map(d=>x.dias.includes(d)?'X':''), x.nota||''];
+      }
+      filas.push(fila);
+    });
+  }
+  const XLSX = await cargarXLSX();
+  const ws = XLSX.utils.aoa_to_sheet([['Semana (lunes)','Semana','Grupo','Hora inicio','Hora fin','L','M','X','J','V','S','D','Nota'], ...filas]);
+  ws['!cols'] = [12,16,8,11,11,4,4,4,4,4,4,4,30].map(w=>({wch:w}));
+  Object.keys(ws).forEach(k=>{ if(k[0]!=='!' && ws[k].t==='s') ws[k].z='@'; });
+  const wg = XLSX.utils.aoa_to_sheet([['Código','Nombre','Grupo'], ...ordenarPorGrupo(trab).map(t=>[t.codigo, t.nombre, grupoDe(t)||'(sin grupo)'])]);
+  wg['!cols'] = [{wch:10},{wch:36},{wch:12}];
+  const wi = XLSX.utils.aoa_to_sheet([
+    ['Empresa', window.EMPRESA.nombre],
+    ['Cómo llenar','Una fila por semana y grupo. Escribe el horario y una X en los días que trabaja ese grupo.'],
+    ['Semana (lunes)','Fecha del lunes de la semana (AAAA-MM-DD). Puedes agregar filas para más semanas.'],
+    ['Horas','Formato 24 h (06:00, 14:00) o con am/pm.'],
+    ['Grupos','La hoja "Grupos" es solo de consulta. Los grupos se cambian en la pestaña Trabajadores.'],
+    ['Sin grupo','Quien no tenga grupo, o cuyo grupo no aparezca en una semana, queda libre esa semana.'],
+    ['Importante','Al cargar, cada semana del archivo se reemplaza completa.']
+  ]); wi['!cols']=[{wch:18},{wch:95}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Programacion');
+  XLSX.utils.book_append_sheet(wb, wg, 'Grupos');
+  XLSX.utils.book_append_sheet(wb, wi, 'Instrucciones');
+  XLSX.writeFile(wb, `Turnos_por_grupos_${slugEmpresa()}_${turnosSemanaAdmin}.xlsx`);
+}
 async function plantillaTurnos(){
   asegurarDraft();
-  const trab = DATA.trabajadores.filter(t=>t.activo!==false);
+  const trab = ordenarPorGrupo(DATA.trabajadores.filter(t=>t.activo!==false));
   const filas = trab.map(t=>{
     const f = turnosDraft.filas[t.codigo] || {hora_inicio:'',hora_fin:'',dias:[],nota:''};
-    return [t.codigo, t.nombre, f.hora_inicio||'', f.hora_fin||'', ...[1,2,3,4,5,6,7].map(d=>f.dias.includes(d)?'X':''), f.nota||''];
+    return [t.codigo, t.nombre, grupoDe(t), f.hora_inicio||'', f.hora_fin||'', ...[1,2,3,4,5,6,7].map(d=>f.dias.includes(d)?'X':''), f.nota||''];
   });
   await xlDescargar(`Turnos_${slugEmpresa()}_${turnosSemanaAdmin}.xlsx`,
-    ['Código','Nombre','Hora inicio','Hora fin','L','M','X','J','V','S','D','Nota'], filas,
-    [10,30,12,12,4,4,4,4,4,4,4,30], [
+    ['Código','Nombre','Grupo','Hora inicio','Hora fin','L','M','X','J','V','S','D','Nota'], filas,
+    [10,30,8,12,12,4,4,4,4,4,4,4,30], [
       ['Empresa', window.EMPRESA.nombre],
       ['Semana', turnosSemanaAdmin],
       ['Semana (texto)', semanaLabel(turnosSemanaAdmin)],
       ['Horas','Formato 24 h (06:00, 14:00, 22:00) o con am/pm (6:00 am, 2:00 pm).'],
       ['Días','Escribe X en cada día que trabaja. Vacío = no trabaja ese día.'],
-      ['Sin turno','Si una persona no trabaja esa semana, deja todos los días vacíos.'],
+      ['Varias semanas','Puedes duplicar la hoja Datos para otras semanas; nombra cada hoja con la fecha, ej. "09-15 nov".'],
       ['Importante','Al cargar, la semana completa se reemplaza por lo que diga el archivo.']
     ]);
 }
-async function analizarTurnos(file){
-  const {filas, meta} = await xlLeer(file, 'codigo');
-  const trab = DATA.trabajadores.filter(t=>t.activo!==false);
-  const claves = ['l','m','x','j','v','s','d'];
-  const vistos = {}; let validas=0, errores=0, libres=0;
-  const res = filas.map(f=>{
+// Valida filas por persona de UNA semana
+function filasPersona(filas, trab, hoja, errores){
+  const out = {}; const vistos = {};
+  filas.forEach(f=>{
     const codigo = xlCodigo(f['codigo'], trab);
     const t = trab.find(x=>x.codigo===codigo);
     const hi = xlHora(f['hora inicio']); const hf = xlHora(f['hora fin']);
-    const dias = claves.map((k,i)=> xlMarcado(f[k]) ? i+1 : 0).filter(Boolean);
-    const errs = [];
-    if(!codigo) errs.push('Falta código');
-    else if(!t) errs.push('Código no existe o está inactivo');
-    if(!hi.ok) errs.push('Hora inicio no válida');
-    if(!hf.ok) errs.push('Hora fin no válida');
-    if(dias.length && hi.ok && hf.ok && (!hi.val || !hf.val)) errs.push('Falta hora (verá "por confirmar")');
-    if(codigo && vistos[codigo]) errs.push('Persona repetida (fila '+vistos[codigo]+')');
-    if(codigo) vistos[codigo] = vistos[codigo] || f._fila;
-    const grave = errs.filter(e=>!e.startsWith('Falta hora')).length>0;
-    if(grave) errores++; else if(dias.length) validas++; else libres++;
-    return {fila:f._fila, codigo, nombre: t?t.nombre:xlTexto(f['nombre']), hora_inicio:hi.val||'', hora_fin:hf.val||'', dias, nota:xlTexto(f['nota']), grave, errs};
+    const dias = DIAS_KEYS.map((k,i)=> xlMarcado(f[k]) ? i+1 : 0).filter(Boolean);
+    const err = m=>errores.push({hoja, fila:f._fila, msg:m});
+    if(!codigo){ err('Falta código'); return; }
+    if(!t){ err(`Código ${codigo} no existe o está inactivo`); return; }
+    if(!hi.ok || !hf.ok){ err(`${t.nombre}: hora no válida`); return; }
+    if(vistos[codigo]){ err(`${t.nombre} repetido (fila ${vistos[codigo]})`); return; }
+    vistos[codigo] = f._fila;
+    if(dias.length) out[codigo] = {hora_inicio:hi.val||'', hora_fin:hf.val||'', dias, nota:xlTexto(f['nota'])};
   });
-  const semanaArchivo = meta['semana'] ? String(meta['semana']).slice(0,10) : null;
-  const ausentes = trab.filter(t=>!res.some(r=>r.codigo===t.codigo)).length;
-  return {filas:res, validas, errores, libres, ausentes, semanaArchivo};
+  return out;
+}
+async function analizarTurnos(file){
+  const hojas = await xlLeerLibro(file);
+  const trab = DATA.trabajadores.filter(t=>t.activo!==false);
+  const anioRef = parseInt((turnosSemanaAdmin||todayStr()).slice(0,4),10);
+  const errores = [], avisos = [];
+  const semanas = {};  // semana -> {filas:{}, origen}
+  const ignorar = h=>/^(info|instrucciones|grupos|resumen|colaboradores|calendario)/.test(xlNorm(h));
+  let modoGrupos = false, modoPersona = false;
+  hojas.forEach((h, idx)=>{
+    if(ignorar(h.nombre)) return;
+    // --- Formato por grupos ---
+    const g = xlTabla(h.aoa, ['semana','grupo','hora inicio']);
+    if(g){
+      modoGrupos = true;
+      const vistos = {};
+      g.forEach(f=>{
+        const err = m=>errores.push({hoja:h.nombre, fila:f._fila, msg:m});
+        const raw = f['semana (lunes)'] ?? f['semana'];
+        const fecha = xlFecha(raw);
+        if(!fecha){ err('Semana no válida (usa AAAA-MM-DD)'); return; }
+        const sem = lunesDe(fecha);
+        if(sem!==fecha) avisos.push(`${h.nombre} fila ${f._fila}: ${fecha} no es lunes, se usó la semana del ${fechaCorta(sem)}.`);
+        const grupo = xlTexto(f['grupo']).toUpperCase();
+        if(!grupo){ err('Falta grupo'); return; }
+        const miembros = trab.filter(t=>grupoDe(t)===grupo);
+        if(!miembros.length){ err(`El grupo ${grupo} no tiene trabajadores asignados`); return; }
+        const hi = xlHora(f['hora inicio']); const hf = xlHora(f['hora fin']);
+        if(!hi.ok || !hf.ok){ err(`Grupo ${grupo}: hora no válida`); return; }
+        const dias = DIAS_KEYS.map((k,i)=> xlMarcado(f[k]) ? i+1 : 0).filter(Boolean);
+        const clave = sem+'|'+grupo;
+        if(vistos[clave]){ err(`Grupo ${grupo} repetido en la semana del ${fechaCorta(sem)} (fila ${vistos[clave]})`); return; }
+        vistos[clave] = f._fila;
+        if(!semanas[sem]) semanas[sem] = {filas:{}, origen:h.nombre};
+        if(dias.length) miembros.forEach(t=>{ semanas[sem].filas[t.codigo] = {hora_inicio:hi.val||'', hora_fin:hf.val||'', dias:[...dias], nota:xlTexto(f['nota'])}; });
+      });
+      return;
+    }
+    // --- Formato por persona (una hoja = una semana) ---
+    const pf = xlTabla(h.aoa, ['codigo','hora inicio']);
+    if(!pf) return;
+    modoPersona = true;
+    let sem = null;
+    const sig = hojas[idx+1];
+    if(sig && /^info/.test(xlNorm(sig.nombre))) sem = xlInfoSemana(sig.aoa);
+    if(!sem) sem = semanaDeTitulo(h.nombre, anioRef);
+    if(!sem && hojas.filter(x=>xlTabla(x.aoa,['codigo','hora inicio'])).length===1){
+      const info = hojas.find(x=>/^info/.test(xlNorm(x.nombre))); sem = info ? xlInfoSemana(info.aoa) : null;
+      if(!sem){ sem = turnosSemanaAdmin; avisos.push(`La hoja "${h.nombre}" no indica semana: se usó la semana abierta (${semanaLabel(sem)}).`); }
+    }
+    if(!sem){ errores.push({hoja:h.nombre, fila:'-', msg:'No se pudo saber a qué semana corresponde esta hoja. Nómbrala con la fecha, ej. "09-15 nov".'}); return; }
+    sem = lunesDe(sem);
+    if(semanas[sem]){ errores.push({hoja:h.nombre, fila:'-', msg:`La semana del ${fechaCorta(sem)} aparece en dos hojas ("${semanas[sem].origen}" y "${h.nombre}").`}); return; }
+    semanas[sem] = {filas: filasPersona(pf, trab, h.nombre, errores), origen:h.nombre};
+  });
+  if(modoGrupos && modoPersona) errores.push({hoja:'-', fila:'-', msg:'El archivo mezcla formato por grupos y por persona. Usa uno solo.'});
+  const lista = Object.keys(semanas).sort().map(sem=>{
+    const filas = semanas[sem].filas;
+    const conTurno = Object.keys(filas).length;
+    return {semana:sem, filas, conTurno, libres: trab.length - conTurno, existentes: DATA.turnos.filter(t=>t.semana===sem).length, origen:semanas[sem].origen};
+  });
+  if(lista.length>12) errores.push({hoja:'-', fila:'-', msg:'Máximo 12 semanas por carga.'});
+  return {semanas: lista, errores, avisos, modo: modoGrupos?'grupos':'persona'};
 }
 function renderXlTurnos(){
   if(!xlTurnos) return '';
   const x = xlTurnos;
-  const otraSemana = x.semanaArchivo && x.semanaArchivo!==turnosSemanaAdmin;
+  const trab = DATA.trabajadores.filter(t=>t.activo!==false);
+  const nombre = c=>{ const t = trab.find(z=>z.codigo===c); return t?t.nombre:c; };
+  const filasSem = x.semanas.map(s=>{
+    const abierta = xlSemAbierta===s.semana;
+    const det = abierta ? `<tr><td colspan="5" style="background:var(--tint);">
+      ${ordenarPorGrupo(trab).map(t=>{ const f = s.filas[t.codigo]; return `<div class="small-note" style="margin:2px 0;">${esc(t.nombre)}${grupoDe(t)?`<span class="grp-chip">${esc(grupoDe(t))}</span>`:''} — ${f?`${esc(horarioTxt(f))} · ${f.dias.map(d=>DIAS_CORTO[d-1]).join(' ')}`:'<i>libre</i>'}</div>`; }).join('')}
+    </td></tr>` : '';
+    return `<tr class="xl-sem-row" data-xlsem="${s.semana}"><td class="mono">${semanaLabel(s.semana)}</td><td class="mono">${s.conTurno}</td><td class="mono">${s.libres}</td><td style="font-size:11px;color:var(--ink-soft);">${s.existentes?'reemplaza lo guardado':'nueva'}</td><td style="font-size:11px;">${abierta?'▲':'▼'}</td></tr>${det}`;
+  }).join('');
+  const ok = !x.errores.length && x.semanas.length;
   return `
   <div class="xl-panel">
-    <h4>Vista previa del Excel — semana ${semanaLabel(turnosSemanaAdmin)}</h4>
-    <div class="xl-res"><span class="ok">${x.validas} con turno</span><span>${x.libres} libres</span>${x.errores?`<span class="er">${x.errores} con error</span>`:''}</div>
-    ${otraSemana?`<div class="xl-warn">Ojo: este archivo se descargó para la semana ${semanaLabel(x.semanaArchivo)}. Se aplicará a la semana que tienes abierta (${semanaLabel(turnosSemanaAdmin)}).</div>`:''}
-    ${x.ausentes?`<div class="xl-warn">${x.ausentes} trabajador(es) activos no están en el archivo: quedarán libres esta semana.</div>`:''}
-    ${x.errores?'<div class="xl-warn">Corrige las filas en rojo en el Excel y vuelve a cargarlo.</div>':''}
-    <div style="max-height:320px;overflow:auto;">
-    <table class="xl-table"><thead><tr><th>Fila</th><th>Nombre</th><th>Horario</th><th>Días</th><th></th></tr></thead><tbody>
-      ${x.filas.map(f=>`<tr class="${f.grave?'err':''}"><td class="mono">${f.fila}</td><td>${esc(f.nombre||f.codigo)}</td><td class="mono">${f.dias.length?esc(horarioTxt(f)):'—'}</td><td class="mono">${f.dias.length?f.dias.map(d=>DIAS_CORTO[d-1]).join(' '):'Libre'}</td><td>${f.errs.length?`<div class="xl-msg" style="${f.grave?'':'color:var(--naranja)'}">${esc(f.errs.join(' · '))}</div>`:''}</td></tr>`).join('')}
-    </tbody></table></div>
+    <h4>Vista previa del Excel ${x.modo==='grupos'?'(por grupos)':'(por persona)'}</h4>
+    <div class="xl-res"><span class="ok">${x.semanas.length} semana(s)</span><span>${x.semanas.reduce((a,s)=>a+s.conTurno,0)} turnos</span>${x.errores.length?`<span class="er">${x.errores.length} error(es)</span>`:''}</div>
+    ${x.errores.length?`<div class="xl-warn">Corrige esto en el Excel y vuelve a cargarlo:</div>${x.errores.slice(0,30).map(e=>`<div class="xl-msg">Hoja "${esc(e.hoja)}" fila ${e.fila}: ${esc(e.msg)}</div>`).join('')}`:''}
+    ${x.avisos.map(a=>`<div class="xl-warn">${esc(a)}</div>`).join('')}
+    ${x.semanas.length?`<table class="xl-table" style="margin-top:8px;"><thead><tr><th>Semana</th><th>Con turno</th><th>Libres</th><th></th><th></th></tr></thead><tbody>${filasSem}</tbody></table>
+    <div class="small-note">Toca una semana para ver el detalle por persona.</div>`:''}
     <div class="row-flex" style="margin-top:12px;">
-      <button class="primary" id="btnXlTurOk" style="width:auto;padding:11px 18px;" ${x.errores?'disabled':''}>Pasar a la semana</button>
+      <button class="primary" id="btnXlTurGuardar" style="width:auto;padding:11px 18px;" ${ok?'':'disabled'}>Guardar y publicar ${x.semanas.length} semana(s)</button>
+      ${x.semanas.length===1 && ok ? '<button class="secondary" id="btnXlTurOk">Revisar en pantalla</button>' : ''}
       <button class="secondary" id="btnXlTurCancel">Cancelar</button>
     </div>
-    <div class="small-note">Después de pasarlo revisa abajo y pulsa "Guardar y publicar semana".</div>
   </div>`;
 }
 
@@ -1403,7 +1599,7 @@ function attachHandlers(){
     } else {
       document.getElementById('btnVolver').onclick = ()=>{ workerResult=null; limpiarDatos(); render(); };
       document.querySelectorAll('[data-wtab]').forEach(b=>{ b.onclick = ()=>{ workerTab = b.dataset.wtab; render(); window.scrollTo(0,0); }; });
-      document.querySelectorAll('[data-sem]').forEach(b=>{ b.onclick = ()=>{ turnoSemanaTrab = parseInt(b.dataset.sem,10); render(); }; });
+      document.querySelectorAll('[data-sem]').forEach(b=>{ b.onclick = ()=>{ const v = parseInt(b.dataset.sem,10); if(v<0||v>5) return; turnoSemanaTrab = v; render(); }; });
       if(workerTab==='cartelera') hidratarImagenes();
       requestAnimationFrame(()=>{
         const fill = document.querySelector('.bar-fill');
@@ -1484,7 +1680,8 @@ function attachHandlers(){
         const monto = parseFloat(document.getElementById('inpNuevoMonto').value) || 0;
         if(!codigo || !nombre){ showToast('Completa código y nombre.'); return; }
         if(!clave){ showToast('Ponle una clave para que solo él/ella pueda ver su score.'); return; }
-        const {error} = await db.from('trabajadores').insert({codigo, nombre, clave, monto_base: monto});
+        const grupo = (document.getElementById('inpNuevoGrupo').value||'').trim().toUpperCase();
+        const {error} = await db.from('trabajadores').insert({codigo, nombre, clave, monto_base: monto, grupo});
         if(error){ showToast('No se pudo agregar: '+error.message); return; }
         showToast('Trabajador agregado.');
         await fetchAll(); render();
@@ -1494,6 +1691,14 @@ function attachHandlers(){
           const {error} = await db.from('trabajadores').update({clave: inp.value.trim()}).eq('codigo', inp.dataset.clave);
           if(error){ showToast('Error: '+error.message); return; }
           showToast('Clave actualizada.');
+          await fetchAll();
+        };
+      });
+      document.querySelectorAll('[data-grupo]').forEach(inp=>{
+        inp.onchange = async ()=>{
+          const {error} = await db.from('trabajadores').update({grupo: inp.value.trim().toUpperCase()}).eq('codigo', inp.dataset.grupo);
+          if(error){ showToast('Error: '+error.message); return; }
+          showToast('Grupo actualizado.');
           await fetchAll();
         };
       });
@@ -1534,7 +1739,7 @@ function attachHandlers(){
       };
       const xo = document.getElementById('btnXlTrabOk');
       if(xo) xo.onclick = async ()=>{
-        const filas = xlTrab.filas.filter(f=>f.estado!=='error').map(f=>({codigo:f.codigo, nombre:f.nombre, clave:f.clave, monto_base:f.monto_base}));
+        const filas = xlTrab.filas.filter(f=>f.estado!=='error').map(f=>{ const o = {codigo:f.codigo, nombre:f.nombre, clave:f.clave, monto_base:f.monto_base}; if(f.grupo!==undefined) o.grupo = f.grupo; return o; });
         xo.disabled = true; xo.textContent = 'Guardando…';
         const {data, error} = await sb.rpc('indicador_importar_trabajadores', {p_empresa: empresaId(), p_pin: SESION_PIN, p_filas: filas});
         if(error){ xo.disabled=false; xo.textContent='Reintentar'; showToast('No se guardó nada: '+error.message); return; }
@@ -1710,7 +1915,7 @@ function attachHandlers(){
     if(adminTab==='turnos' && document.getElementById('btnSemPrev')){
       const cambiarSemana = (nueva)=>{
         if(turnosDraft && turnosDraft.dirty && !confirmarSalir()) return;
-        turnosSemanaAdmin = nueva; turnosDraft = null; xlTurnos = null; render();
+        turnosSemanaAdmin = nueva; turnosDraft = null; xlTurnos = null; xlSemAbierta = null; render();
       };
       document.getElementById('btnSemPrev').onclick = ()=> cambiarSemana(sumarDias(turnosSemanaAdmin,-7));
       document.getElementById('btnSemNext').onclick = ()=> cambiarSemana(sumarDias(turnosSemanaAdmin,7));
@@ -1729,20 +1934,52 @@ function attachHandlers(){
       const bit = document.getElementById('btnIrTrabajadores'); if(bit) bit.onclick = ()=>{ adminTab='trabajadores'; render(); window.scrollTo(0,0); };
       const bxp = document.getElementById('btnXlTurPlantilla');
       if(bxp) bxp.onclick = async ()=>{ try{ await plantillaTurnos(); }catch(e){ showToast(e.message); } };
+      const bxg = document.getElementById('btnXlTurPlantillaGrupos');
+      if(bxg) bxg.onclick = async ()=>{ try{ await plantillaTurnosGrupos(); }catch(e){ showToast(e.message); } };
+      const ssp = document.getElementById('selSemanasPlantilla'); if(ssp) ssp.onchange = e=>{ semanasPlantilla = parseInt(e.target.value,10)||4; };
       const ixt = document.getElementById('inpXlTur');
       if(ixt) ixt.onchange = async (e)=>{
         const file = e.target.files && e.target.files[0]; e.target.value=''; if(!file) return;
-        try{ showToast('Leyendo Excel…'); xlTurnos = await analizarTurnos(file); if(!xlTurnos.filas.length){ xlTurnos=null; showToast('El archivo no tiene filas.'); } render(); }
+        if(turnosDraft && turnosDraft.dirty && !confirmarSalir()) return;
+        try{ showToast('Leyendo Excel…'); xlTurnos = await analizarTurnos(file); xlSemAbierta = null;
+             if(!xlTurnos.semanas.length && !xlTurnos.errores.length){ xlTurnos=null; showToast('No encontré turnos en el archivo. Usa una de las plantillas.'); } render(); }
         catch(err){ xlTurnos=null; showToast(err.message); }
+      };
+      document.querySelectorAll('[data-xlsem]').forEach(r=>{ r.onclick = ()=>{ xlSemAbierta = xlSemAbierta===r.dataset.xlsem ? null : r.dataset.xlsem; render(); }; });
+      const bxs = document.getElementById('btnXlTurGuardar');
+      if(bxs) bxs.onclick = async ()=>{
+        const semanas = xlTurnos.semanas.map(s=>({semana:s.semana, filas:Object.entries(s.filas).map(([codigo,f])=>({trabajador_codigo:codigo, ...f}))}));
+        bxs.disabled = true; bxs.textContent = 'Guardando…';
+        const {data, error} = await mutar('turnos','guardar_periodo',{semanas}, null);
+        if(error){ bxs.disabled = false; bxs.textContent = 'Reintentar'; showToast('No se guardó nada: '+error.message); return; }
+        const primera = semanas[0].semana;
+        xlTurnos = null; turnosDraft = null; turnosSemanaAdmin = primera; await fetchAll();
+        showToast(`Listo: ${data.semanas} semana(s) y ${data.turnos} turnos publicados.`); render();
       };
       const bxo = document.getElementById('btnXlTurOk');
       if(bxo) bxo.onclick = ()=>{
-        const filas = {};
-        xlTurnos.filas.filter(f=>!f.grave && f.dias.length).forEach(f=>{ filas[f.codigo] = {hora_inicio:f.hora_inicio, hora_fin:f.hora_fin, dias:f.dias, nota:f.nota}; });
-        turnosDraft = {semana: turnosSemanaAdmin, filas, dirty:true}; xlTurnos = null;
+        const s0 = xlTurnos.semanas[0];
+        turnosSemanaAdmin = s0.semana; turnosDraft = {semana: s0.semana, filas: JSON.parse(JSON.stringify(s0.filas)), dirty:true}; xlTurnos = null;
         showToast('Turnos cargados. Revisa y pulsa "Guardar y publicar semana".'); render();
       };
       const bxc = document.getElementById('btnXlTurCancel'); if(bxc) bxc.onclick = ()=>{ xlTurnos = null; render(); };
+      // Programar por grupo
+      document.querySelectorAll('[data-gsel]').forEach(b=>{ b.onclick = ()=>{ grupoDraft.grupo = b.dataset.gsel; render(); }; });
+      const gi = document.getElementById('gIni'); if(gi) gi.onchange = e=>{ grupoDraft.hora_inicio = e.target.value; };
+      const gf = document.getElementById('gFin'); if(gf) gf.onchange = e=>{ grupoDraft.hora_fin = e.target.value; };
+      const gn = document.getElementById('gNota'); if(gn) gn.oninput = e=>{ grupoDraft.nota = e.target.value; };
+      document.querySelectorAll('[data-gpreset]').forEach(b=>{ b.onclick = ()=>{ grupoDraft.hora_inicio = b.dataset.a; grupoDraft.hora_fin = b.dataset.b; render(); }; });
+      document.querySelectorAll('[data-gdia]').forEach(b=>{ b.onclick = ()=>{ const d = parseInt(b.dataset.gdia,10); grupoDraft.dias = grupoDraft.dias.includes(d) ? grupoDraft.dias.filter(x=>x!==d) : [...grupoDraft.dias, d].sort(); render(); }; });
+      document.querySelectorAll('[data-gdias]').forEach(b=>{ b.onclick = ()=>{ grupoDraft.dias = b.dataset.gdias.split('').filter(Boolean).map(Number); render(); }; });
+      const bag = document.getElementById('btnAplicarGrupo');
+      if(bag) bag.onclick = ()=>{
+        const g = grupoDraft.grupo;
+        if(grupoDraft.dias.length && (!grupoDraft.hora_inicio || !grupoDraft.hora_fin)){ showToast('Indica la hora de inicio y fin del grupo.'); return; }
+        const miembros = DATA.trabajadores.filter(t=>t.activo!==false && grupoDe(t)===g);
+        miembros.forEach(t=>{ turnosDraft.filas[t.codigo] = {hora_inicio:grupoDraft.hora_inicio, hora_fin:grupoDraft.hora_fin, dias:[...grupoDraft.dias], nota:grupoDraft.nota}; });
+        turnosDraft.dirty = true;
+        showToast(`Aplicado a ${miembros.length} persona(s) del grupo ${g}. Recuerda guardar.`); render();
+      };
       document.getElementById('btnCopiarSemana').onclick = ()=>{
         const ant = sumarDias(turnosSemanaAdmin,-7);
         const previos = DATA.turnos.filter(t=>t.semana===ant);
