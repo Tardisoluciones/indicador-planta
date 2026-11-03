@@ -176,6 +176,27 @@
   .file-btn{display:inline-block;padding:10px 14px;border:1px dashed var(--line);border-radius:9px;cursor:pointer;font-size:13px;color:var(--steel);font-weight:600;}
   .chk-inline{display:flex;align-items:center;gap:8px;font-size:13px;margin:10px 0 14px;color:var(--ink);}
   .chk-inline input{width:auto;}
+  .col-search{margin-bottom:12px;}
+  .col-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--card);cursor:pointer;}
+  .col-row:hover{border-color:var(--steel);}
+  .col-row .cr-main{flex:1;min-width:0;}
+  .col-row .cr-name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .col-row .cr-sub{font-size:11px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;margin-top:2px;}
+  .col-row .cr-pct{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:15px;min-width:54px;text-align:right;}
+  .col-row .mini-track{margin-top:6px;}
+  .anot{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;background:var(--card);}
+  .anot.mia{border-left:3px solid var(--steel);}
+  .anot-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline;}
+  .anot-ind{font-weight:600;font-size:13px;}
+  .anot-pts{font-family:'IBM Plex Mono',monospace;color:var(--rojo);font-size:12px;white-space:nowrap;}
+  .anot-fecha{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);}
+  .anot-nota{font-size:13px;margin-top:4px;}
+  .anot-por{font-size:11px;color:var(--ink-soft);margin-top:4px;}
+  .anot-por b{color:var(--steel);}
+  .tag-mia{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:var(--tint);color:var(--steel);border-radius:6px;padding:1px 6px;margin-left:6px;}
+  .anot-actions{display:flex;gap:16px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
+  .anot-edit{display:grid;gap:8px;margin-top:8px;}
+  .anot-edit input[type=date]{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-family:'IBM Plex Mono',monospace;font-size:14px;background:var(--input-bg);color:var(--ink);}
   .xl-bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;}
   .xl-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);font-family:inherit;font-size:13px;font-weight:600;color:var(--steel);cursor:pointer;}
   .xl-btn.verde{border-color:#2F8F5B;color:#2F8F5B;}
@@ -280,6 +301,10 @@ let turnosSemanaAdmin = null;      // lunes de la semana que se está editando
 let turnosDraft = null;            // {semana, filas:{codigo:{hora_inicio,hora_fin,dias:[],nota}}, dirty}
 let nuevaPub = { titulo:'', texto:'', enlace:'', imagen:null, fijado:false };
 const IMG_CACHE = {};
+let colabPeriodo = null;   // mes consultado en Colaboradores
+let colabCodigo = null;    // colaborador abierto en detalle
+let colabFiltro = '';      // búsqueda por nombre/código
+let editRegId = null;      // anotación en edición
 let xlTrab = null;    // vista previa de carga de trabajadores {filas:[...], errores, nuevos, actualizados}
 let xlTurnos = null;  // vista previa de carga de turnos {semanaArchivo, filas:[...], validas, errores}
 
@@ -340,6 +365,7 @@ function limpiarDatos(){
   turnosDraft = null; turnosSemanaAdmin = null;
   nuevaPub = { titulo:'', texto:'', enlace:'', imagen:null, fijado:false };
   xlTrab = null; xlTurnos = null;
+  colabCodigo = null; colabFiltro = ''; editRegId = null; colabPeriodo = null;
   Object.keys(IMG_CACHE).forEach(k=>delete IMG_CACHE[k]);
 }
 function cargarDatos(d){
@@ -487,7 +513,7 @@ function historialDelPeriodo(codigo, periodo){
     .filter(r=>r.trabajador_codigo===codigo && r.periodo===periodo)
     .map(r=>{
       const ind = DATA.indicadores.find(i=>i.id===r.indicador_id);
-      return { id:r.indicador_id, fecha:r.fecha, indicador: ind?ind.nombre:'(indicador eliminado)', puntos: ind?ind.puntos_por_falta:0, nota:r.nota, registradoPor:r.registrado_por };
+      return { id:r.indicador_id, rid:r.id, autorId:r.registrado_id, editadoPor:r.editado_por, fecha:r.fecha, indicador: ind?ind.nombre:'(indicador eliminado)', puntos: ind?ind.puntos_por_falta:0, nota:r.nota, registradoPor:r.registrado_por };
     })
     .sort((a,b)=> b.fecha.localeCompare(a.fecha));
 }
@@ -661,15 +687,15 @@ function renderAdmin(){
   const esAdmin = currentSession && currentSession.tipo==='admin';
   const tabsCompletas = [
     {k:'registrar', l:'Registrar'}, {k:'trabajadores', l:'Trabajadores'},
-    {k:'indicadores', l:'Indicadores'}, {k:'resumen', l:'Resumen'}, {k:'bonificacion', l:'Bonificación'},
+    {k:'indicadores', l:'Indicadores'}, {k:'resumen', l:'Resumen'}, {k:'colaboradores', l:'Colaboradores'}, {k:'bonificacion', l:'Bonificación'},
     {k:'turnos', l:'Turnos'}, {k:'cartelera', l:'Cartelera'},
     {k:'lideres', l:'Líderes'}, {k:'qr', l:'Código QR'},
   ];
-  const tabs = esAdmin ? tabsCompletas : [{k:'registrar', l:'Registrar'}];
+  const tabs = esAdmin ? tabsCompletas : [{k:'registrar', l:'Registrar'}, {k:'colaboradores', l:'Colaboradores'}];
   const tabsHtml = tabs.map(t=>`<div class="tab ${adminTab===t.k?'active':''}" data-tab="${t.k}">${t.l}</div>`).join('');
   const quienEres = `<div class="small-note" style="margin-bottom:14px;">Ingresaste como <strong>${currentSession.nombre}</strong>${esAdmin?'':' (acceso de líder)'}.</div>`;
   let body = '';
-  if(!esAdmin){ adminTab = 'registrar'; }
+  if(!esAdmin && !['registrar','colaboradores'].includes(adminTab)){ adminTab = 'registrar'; }
   if(adminTab==='registrar') body = renderRegistrar();
   else if(adminTab==='trabajadores') body = renderTrabajadoresAdmin();
   else if(adminTab==='indicadores') body = renderIndicadoresAdmin();
@@ -679,6 +705,7 @@ function renderAdmin(){
   else if(adminTab==='qr') body = renderQR();
   else if(adminTab==='turnos') body = renderTurnosAdmin();
   else if(adminTab==='cartelera') body = renderCarteleraAdmin();
+  else if(adminTab==='colaboradores') body = renderColaboradores();
   return `<div class="admin-wrap">${quienEres}<div class="tabs">${tabsHtml}</div>${body}</div>`;
 }
 
@@ -930,6 +957,94 @@ function renderBonificacion(){
     <button class="secondary" style="margin-top:14px;" id="btnGenerarPdfBono">Generar PDF / Imprimir</button>
     <div class="small-note">El monto base de cada quien se edita en la pestaña Trabajadores. El valor pagado es proporcional a su % de cumplimiento ponderado de esta quincena.</div>
   </div>`;
+}
+
+/* ---------- COLABORADORES (líder y admin) ---------- */
+function puedeModificar(h){
+  if(!currentSession) return false;
+  return currentSession.tipo==='admin' || (!!h.autorId && h.autorId===currentSession.id);
+}
+function renderColaboradores(){
+  const periodos = allPeriodos();
+  if(!colabPeriodo || !periodos.includes(colabPeriodo)) colabPeriodo = periodos[0];
+  const opcionesPeriodo = periodos.map(p=>`<option value="${p}" ${p===colabPeriodo?'selected':''}>${periodLabel(p)}</option>`).join('');
+  const trabActivos = DATA.trabajadores.filter(t=>t.activo!==false);
+  if(colabCodigo && trabActivos.some(t=>t.codigo===colabCodigo)) return renderColaboradorDetalle(opcionesPeriodo);
+  colabCodigo = null;
+  const q = xlNorm(colabFiltro);
+  const filas = trabActivos.map(t=>{
+    const overall = computeWeighted(computeCategoryScores(t.codigo, colabPeriodo));
+    const faltas = DATA.registros.filter(r=>r.trabajador_codigo===t.codigo && r.periodo===colabPeriodo).length;
+    const mias = currentSession && currentSession.tipo!=='admin' ? DATA.registros.filter(r=>r.trabajador_codigo===t.codigo && r.periodo===colabPeriodo && r.registrado_id===currentSession.id).length : 0;
+    return {t, overall, faltas, mias};
+  }).filter(x=>!q || xlNorm(x.t.nombre).includes(q) || xlNorm(x.t.codigo).includes(q))
+    .sort((a,b)=>(a.overall??100)-(b.overall??100) || a.t.nombre.localeCompare(b.t.nombre));
+  return `
+  <div class="section-title">Colaboradores</div>
+  <div class="field-group"><label>Mes</label><select id="selColabPeriodo">${opcionesPeriodo}</select></div>
+  <div class="col-search"><input type="text" id="inpColabBuscar" value="${esc(colabFiltro)}" placeholder="Buscar por nombre o código…" style="font-family:'Space Grotesk',sans-serif;"></div>
+  <div class="small-note" style="margin:0 0 10px;">Ordenados de menor a mayor puntaje. Toca un colaborador para ver el detalle de sus anotaciones.</div>
+  ${filas.length ? filas.map(x=>{ const t = tierOf(x.overall); return `
+    <div class="col-row" data-colab="${esc(x.t.codigo)}">
+      <div class="cr-main">
+        <div class="cr-name">${esc(x.t.nombre)}</div>
+        <div class="cr-sub">${esc(x.t.codigo)} · ${x.faltas} anotación(es)${x.mias?` · ${x.mias} tuya(s)`:''}</div>
+        <div class="mini-track"><div class="mini-fill" style="width:${x.overall??0}%;background:${t.color};"></div></div>
+      </div>
+      <div class="cr-pct" style="color:${t.color};">${x.overall===null?'—':x.overall+'%'}</div>
+    </div>`; }).join('') : `<div class="empty-state">${trabActivos.length?'Nadie coincide con la búsqueda.':'Aún no hay colaboradores cargados.'}</div>`}`;
+}
+function renderColaboradorDetalle(opcionesPeriodo){
+  const t = DATA.trabajadores.find(x=>x.codigo===colabCodigo);
+  const cats = computeCategoryScores(t.codigo, colabPeriodo);
+  const overall = computeWeighted(cats);
+  const tier = tierOf(overall);
+  const hist = historialDelPeriodo(t.codigo, colabPeriodo);
+  const indActivos = DATA.indicadores.filter(i=>i.activo!==false);
+  const anot = hist.map(h=>{
+    const mia = currentSession.tipo!=='admin' && h.autorId===currentSession.id;
+    const puede = puedeModificar(h);
+    if(editRegId===h.rid && puede){
+      const indOpts = DATA.indicadores.filter(i=>i.activo!==false || i.id===h.id).map(i=>`<option value="${esc(i.id)}" ${i.id===h.id?'selected':''}>${esc(i.nombre)} (-${i.puntos_por_falta})</option>`).join('');
+      return `
+      <div class="anot mia">
+        <div class="anot-ind">Editar anotación</div>
+        <div class="anot-edit">
+          <div><label>Fecha</label><input type="date" id="edFecha" value="${h.fecha}"></div>
+          <div><label>Indicador</label><select id="edInd">${indOpts}</select></div>
+          <div><label>Nota</label><input type="text" id="edNota" value="${esc(h.nota||'')}" placeholder="Observación" style="font-family:'Space Grotesk',sans-serif;"></div>
+          <div class="row-flex"><button class="primary" id="btnEdGuardar" data-rid="${h.rid}" style="width:auto;padding:10px 18px;">Guardar cambios</button><button class="secondary" id="btnEdCancelar">Cancelar</button></div>
+        </div>
+      </div>`;
+    }
+    return `
+    <div class="anot ${mia?'mia':''}">
+      <div class="anot-top"><span class="anot-ind">${esc(h.indicador)}${mia?'<span class="tag-mia">Tuya</span>':''}</span><span class="anot-pts">-${h.puntos}</span></div>
+      <div class="anot-fecha">${h.fecha}</div>
+      ${h.nota?`<div class="anot-nota">${esc(h.nota)}</div>`:''}
+      <div class="anot-por">Registró: <b>${esc(h.registradoPor||'—')}</b>${h.editadoPor?` · editada por ${esc(h.editadoPor)}`:''}</div>
+      ${puede?`<div class="anot-actions">
+        <button class="react-btn" data-ed-reg="${h.rid}">Editar</button>
+        <button class="del-btn" data-del-reg="${h.rid}">${pendingChange && pendingChange.kind==='reg' && pendingChange.id===h.rid ? '¿Confirmar eliminar?' : 'Eliminar'}</button>
+      </div>`:''}
+    </div>`;
+  }).join('');
+  return `
+  <button class="linklike" id="btnColabVolver" style="padding-left:0;margin-bottom:8px;">← Todos los colaboradores</button>
+  <div class="card" style="margin-bottom:14px;">
+    <div class="worker-name">${esc(t.nombre)}</div>
+    <div class="small-note" style="text-align:center;margin:2px 0 0;">${esc(t.codigo)}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${overall??0}%;background:${tier.color};"></div></div>
+    <div class="bar-readout"><span class="bar-score">${overall===null?'—':overall+'%'}</span><span class="tier-label" style="background:${tier.bg};color:${tier.color};">${tier.label}</span></div>
+  </div>
+  <div class="field-group"><label>Mes</label><select id="selColabPeriodo">${opcionesPeriodo}</select></div>
+  <div class="section-title">Por indicador</div>
+  <div class="card" style="margin-bottom:14px;">
+    ${cats.map(c=>{ const tc = tierOf(c.score); return `<div class="mini-row"><div class="mini-head"><span class="nombre">${esc(c.nombre)}${c.veces?` (${c.veces}×)`:''}</span><span class="pct" style="color:${tc.color};">${c.score}%</span></div><div class="mini-track"><div class="mini-fill" style="width:${c.score}%;background:${tc.color};"></div></div></div>`; }).join('') || '<div class="small-note">Sin indicadores.</div>'}
+  </div>
+  <div class="section-title">Anotaciones del mes (${hist.length})</div>
+  ${hist.length ? anot : '<div class="empty-state">Sin anotaciones en este mes.</div>'}
+  ${currentSession.tipo!=='admin' && hist.length ? '<div class="small-note">Solo puedes editar o eliminar las anotaciones marcadas como "Tuya".</div>' : ''}`;
 }
 
 /* ---------- TURNOS (admin) ---------- */
@@ -1649,6 +1764,37 @@ function attachHandlers(){
         showToast(sinHora ? `Semana guardada. ${sinHora} persona(s) sin horario: verán "por confirmar".` : 'Semana guardada y publicada.');
         render();
       };
+    }
+
+    if(adminTab==='colaboradores'){
+      const sp = document.getElementById('selColabPeriodo');
+      if(sp) sp.onchange = e=>{ colabPeriodo = e.target.value; editRegId = null; pendingChange = null; render(); };
+      const ib = document.getElementById('inpColabBuscar');
+      if(ib) ib.oninput = e=>{ colabFiltro = e.target.value; render(); const el = document.getElementById('inpColabBuscar'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } };
+      document.querySelectorAll('[data-colab]').forEach(el=>{ el.onclick = ()=>{ colabCodigo = el.dataset.colab; editRegId = null; pendingChange = null; render(); window.scrollTo(0,0); }; });
+      const bv = document.getElementById('btnColabVolver');
+      if(bv) bv.onclick = ()=>{ colabCodigo = null; editRegId = null; pendingChange = null; render(); };
+      document.querySelectorAll('[data-ed-reg]').forEach(b=>{ b.onclick = ()=>{ editRegId = b.dataset.edReg; pendingChange = null; render(); }; });
+      const bc = document.getElementById('btnEdCancelar'); if(bc) bc.onclick = ()=>{ editRegId = null; render(); };
+      const bgu = document.getElementById('btnEdGuardar');
+      if(bgu) bgu.onclick = async ()=>{
+        const fecha = document.getElementById('edFecha').value;
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){ showToast('Fecha no válida.'); return; }
+        bgu.disabled = true;
+        const {error} = await mutar('registros','editar',{fecha, indicador_id: document.getElementById('edInd').value, nota: document.getElementById('edNota').value}, {id: bgu.dataset.rid});
+        bgu.disabled = false;
+        if(error){ showToast('No se pudo guardar: '+error.message); return; }
+        editRegId = null; await fetchAll(); showToast('Anotación actualizada. El puntaje se recalculó.'); render();
+      };
+      document.querySelectorAll('[data-del-reg]').forEach(b=>{ b.onclick = async ()=>{
+        const id = b.dataset.delReg;
+        if(pendingChange && pendingChange.kind==='reg' && pendingChange.id===id){
+          pendingChange = null;
+          const {error} = await mutar('registros','eliminar',{}, {id});
+          if(error){ showToast('No se pudo eliminar: '+error.message); render(); return; }
+          await fetchAll(); showToast('Anotación eliminada. El puntaje se recalculó.'); render();
+        } else { pendingChange = {kind:'reg', id}; render(); }
+      }; });
     }
 
     if(adminTab==='cartelera'){
